@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ROLAB — Админка</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <!-- HEADER -->
+  <header class="app-header">
+    <div class="logo">ROLAB</div>
+    <div class="user-info">
+      <span id="header-user-name"></span>
+      <button class="btn btn-sm btn-outline" onclick="API.logout()" style="color:white;border-color:#475569;">Выйти</button>
+    </div>
+  </header>
+
+  <!-- NAVIGATION -->
+  <nav class="app-nav" id="main-nav">
+    <a href="#dashboard" data-page="dashboard" class="active">Главная</a>
+    <a href="#companies" data-page="companies">Компании</a>
+    <a href="#teachers" data-page="teachers">Педагоги</a>
+    <a href="#schedule" data-page="schedule">Расписание</a>
+    <a href="#lessons" data-page="lessons">Занятия</a>
+    <a href="#reports" data-page="reports">Отчеты</a>
+    <a href="#payments" data-page="payments">Оплата</a>
+  </nav>
+
+  <div class="main-content" id="main-content">
+
+    <!-- ============================================================
+         DASHBOARD
+         ============================================================ -->
+    <div class="page-section active" id="page-dashboard">
+      <h1 class="section-title">Главная</h1>
+      <div class="stats-grid" id="dashboard-stats"></div>
+
+      <div class="card">
+        <div class="card-header"><h2>Занятия сегодня</h2></div>
+        <div class="card-body no-pad">
+          <div class="table-wrap">
+            <table id="dashboard-today-table">
+              <thead>
+                <tr>
+                  <th>Время</th>
+                  <th>Педагог</th>
+                  <th>Компания</th>
+                  <th>Группа</th>
+                  <th>Статус</th>
+                  <th>Дети</th>
+                </tr>
+              </thead>
+              <tbody id="dashboard-today-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         COMPANIES
+         ============================================================ -->
+    <div class="page-section" id="page-companies">
+      <div class="flex-between mb-16">
+        <h1 class="section-title" style="margin-bottom:0;">Компании</h1>
+        <button class="btn btn-primary" onclick="openCompanyModal()">+ Добавить компанию</button>
+      </div>
+
+      <div class="filters">
+        <div class="form-group">
+          <label>Тип</label>
+          <select id="company-filter-type" onchange="loadCompanies()">
+            <option value="">Все</option>
+            <option value="school">Школы</option>
+            <option value="kindergarten">Садики</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Поиск</label>
+          <input type="text" id="company-filter-search" placeholder="Название..." oninput="loadCompanies()">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body no-pad">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Название</th>
+                  <th>Тип</th>
+                  <th>Адрес</th>
+                  <th>Контакт</th>
+                  <th>Телефон</th>
+                  <th>Действия</th>
+                </tr>
+              </thead>
+              <tbody id="companies-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         TEACHERS
+         ============================================================ -->
+    <div class="page-section" id="page-teachers">
+      <div class="flex-between mb-16">
+        <h1 class="section-title" style="margin-bottom:0;">Педагоги</h1>
+        <button class="btn btn-primary" onclick="openTeacherModal()">+ Добавить педагога</button>
+      </div>
+
+      <div class="filters">
+        <div class="form-group">
+          <label>Поиск</label>
+          <input type="text" id="teacher-filter-search" placeholder="ФИО или логин..." oninput="loadTeachers()">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body no-pad">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ФИО</th>
+                  <th>Логин</th>
+                  <th>Пароль</th>
+                  <th>Телефон</th>
+                  <th>Компании</th>
+                  <th>Действия</th>
+                </tr>
+              </thead>
+              <tbody id="teachers-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         SCHEDULE
+         ============================================================ -->
+    <div class="page-section" id="page-schedule">
+      <div class="flex-between mb-16">
+        <h1 class="section-title" style="margin-bottom:0;">Расписание</h1>
+        <div class="btn-group">
+          <button class="btn btn-success" onclick="openGenerateModal()">Сгенерировать занятия</button>
+          <button class="btn btn-primary" onclick="openSlotModal()">+ Добавить слот</button>
+        </div>
+      </div>
+
+      <div class="filters">
+        <div class="form-group">
+          <label>Педагог</label>
+          <select id="schedule-filter-teacher" onchange="loadSchedule()">
+            <option value="">Все</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Компания</label>
+          <select id="schedule-filter-company" onchange="loadSchedule()">
+            <option value="">Все</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>День</label>
+          <select id="schedule-filter-day" onchange="loadSchedule()">
+            <option value="">Все</option>
+            <option value="1">Понедельник</option>
+            <option value="2">Вторник</option>
+            <option value="3">Среда</option>
+            <option value="4">Четверг</option>
+            <option value="5">Пятница</option>
+            <option value="6">Суббота</option>
+            <option value="7">Воскресенье</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body no-pad">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>День</th>
+                  <th>Время</th>
+                  <th>Педагог</th>
+                  <th>Компания</th>
+                  <th>Тип</th>
+                  <th>Группа</th>
+                  <th>Действия</th>
+                </tr>
+              </thead>
+              <tbody id="schedule-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         LESSONS
+         ============================================================ -->
+    <div class="page-section" id="page-lessons">
+      <div class="flex-between mb-16">
+        <h1 class="section-title" style="margin-bottom:0;">Занятия</h1>
+      </div>
+
+      <div class="filters">
+        <div class="form-group">
+          <label>С</label>
+          <input type="date" id="lessons-date-from" onchange="loadLessons()">
+        </div>
+        <div class="form-group">
+          <label>По</label>
+          <input type="date" id="lessons-date-to" onchange="loadLessons()">
+        </div>
+        <div class="form-group">
+          <label>Педагог</label>
+          <select id="lessons-filter-teacher" onchange="loadLessons()">
+            <option value="">Все</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Компания</label>
+          <select id="lessons-filter-company" onchange="loadLessons()">
+            <option value="">Все</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Статус</label>
+          <select id="lessons-filter-status" onchange="loadLessons()">
+            <option value="">Все</option>
+            <option value="planned">Запланировано</option>
+            <option value="completed">Проведено</option>
+            <option value="cancelled">Отменено</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body no-pad">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Дата</th>
+                  <th>Время</th>
+                  <th>Педагог</th>
+                  <th>Компания</th>
+                  <th>Группа</th>
+                  <th>Статус</th>
+                  <th>Дети</th>
+                  <th>Действия</th>
+                </tr>
+              </thead>
+              <tbody id="lessons-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         REPORTS
+         ============================================================ -->
+    <div class="page-section" id="page-reports">
+      <h1 class="section-title">Отчеты</h1>
+
+      <div class="filters">
+        <div class="form-group">
+          <label>С</label>
+          <input type="date" id="reports-date-from">
+        </div>
+        <div class="form-group">
+          <label>По</label>
+          <input type="date" id="reports-date-to">
+        </div>
+        <div class="form-group">
+          <label>Педагог</label>
+          <select id="reports-filter-teacher">
+            <option value="">Все</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Компания</label>
+          <select id="reports-filter-company">
+            <option value="">Все</option>
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;align-items:flex-end;">
+          <button class="btn btn-primary" onclick="loadReports()">Показать</button>
+        </div>
+      </div>
+
+      <div class="stats-grid" id="reports-totals"></div>
+
+      <div class="card">
+        <div class="card-header"><h2>По педагогам</h2></div>
+        <div class="card-body no-pad">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Педагог</th>
+                  <th>Всего</th>
+                  <th>Проведено</th>
+                  <th>Отменено</th>
+                  <th>Запланировано</th>
+                  <th>Дети</th>
+                </tr>
+              </thead>
+              <tbody id="reports-teachers-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt-16">
+        <div class="card-header"><h2>По компаниям</h2></div>
+        <div class="card-body no-pad">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Компания</th>
+                  <th>Тип</th>
+                  <th>Всего</th>
+                  <th>Проведено</th>
+                  <th>Отменено</th>
+                  <th>Дети</th>
+                </tr>
+              </thead>
+              <tbody id="reports-companies-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt-16">
+        <div class="card-header"><h2>Замены</h2></div>
+        <div class="card-body no-pad">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Дата</th>
+                  <th>Компания</th>
+                  <th>Время</th>
+                  <th>Оригинал</th>
+                  <th>Замена</th>
+                  <th>Причина</th>
+                </tr>
+              </thead>
+              <tbody id="reports-subs-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         PAYMENTS
+         ============================================================ -->
+    <div class="page-section" id="page-payments">
+      <h1 class="section-title">Расчет оплаты</h1>
+
+      <div class="filters">
+        <div class="form-group">
+          <label>С</label>
+          <input type="date" id="payments-date-from">
+        </div>
+        <div class="form-group">
+          <label>По</label>
+          <input type="date" id="payments-date-to">
+        </div>
+        <div class="form-group">
+          <label>Педагог</label>
+          <select id="payments-filter-teacher">
+            <option value="">Все</option>
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;align-items:flex-end;">
+          <button class="btn btn-primary btn-lg" onclick="loadPayments()">Рассчитать</button>
+        </div>
+      </div>
+
+      <div class="stats-grid" id="payments-totals"></div>
+
+      <div class="card" id="payments-summary-card" style="display:none;">
+        <div class="card-header"><h2>Итого по педагогам</h2></div>
+        <div class="card-body no-pad">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Педагог</th>
+                  <th>Занятий</th>
+                  <th>Детей</th>
+                  <th>Сумма</th>
+                </tr>
+              </thead>
+              <tbody id="payments-summary-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt-16" id="payments-details-card" style="display:none;">
+        <div class="card-header"><h2>Детализация</h2></div>
+        <div class="card-body no-pad">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Дата</th>
+                  <th>Педагог</th>
+                  <th>Компания</th>
+                  <th>Тип</th>
+                  <th>Группа</th>
+                  <th>Дети</th>
+                  <th>Оплата</th>
+                </tr>
+              </thead>
+              <tbody id="payments-details-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL: Company
+       ============================================================ -->
+  <div class="modal-overlay" id="modal-company">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modal-company-title">Новая компания</h3>
+        <button class="modal-close" onclick="closeModal('modal-company')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="company-edit-id">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Название *</label>
+            <input type="text" id="company-name">
+          </div>
+          <div class="form-group">
+            <label>Тип *</label>
+            <select id="company-type">
+              <option value="school">Школа</option>
+              <option value="kindergarten">Садик</option>
+              <option value="masterclass">Мастер-класс</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Адрес</label>
+          <input type="text" id="company-address">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Контактное лицо</label>
+            <input type="text" id="company-contact">
+          </div>
+          <div class="form-group">
+            <label>Телефон</label>
+            <input type="text" id="company-phone">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('modal-company')">Отмена</button>
+        <button class="btn btn-primary" onclick="saveCompany()">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL: Teacher
+       ============================================================ -->
+  <div class="modal-overlay" id="modal-teacher">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modal-teacher-title">Новый педагог</h3>
+        <button class="modal-close" onclick="closeModal('modal-teacher')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="teacher-edit-id">
+        <div class="form-row">
+          <div class="form-group">
+            <label>ФИО *</label>
+            <input type="text" id="teacher-fullname" oninput="generateLoginFromFullName(this.value)">
+          </div>
+          <div class="form-group">
+            <label>Логин *</label>
+            <input type="text" id="teacher-username">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" id="teacher-password-group" style="display:none;">
+            <label>Новый пароль</label>
+            <input type="text" id="teacher-password" placeholder="Оставьте пустым, чтобы не менять">
+          </div>
+          <div class="form-group">
+            <label>Телефон</label>
+            <input type="text" id="teacher-phone">
+          </div>
+        </div>
+        <div class="alert alert-info" id="teacher-password-info" style="display:none;">Пароль будет сгенерирован автоматически</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('modal-teacher')">Отмена</button>
+        <button class="btn btn-primary" onclick="saveTeacher()">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL: Teacher Rates
+       ============================================================ -->
+  <div class="modal-overlay" id="modal-rates">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Компании и ставки</h3>
+        <button class="modal-close" onclick="closeModal('modal-rates')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="rates-teacher-id">
+        <p class="text-muted mb-16">Выберите компании и укажите индивидуальные ставки для школ (оставьте пустым для ставки по умолчанию 3500 тг).</p>
+        <div id="rates-list"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('modal-rates')">Отмена</button>
+        <button class="btn btn-primary" onclick="saveRates()">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL: Schedule Slot
+       ============================================================ -->
+  <div class="modal-overlay" id="modal-slot">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modal-slot-title">Новый слот расписания</h3>
+        <button class="modal-close" onclick="closeModal('modal-slot')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="slot-edit-id">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Педагог *</label>
+            <select id="slot-teacher"></select>
+          </div>
+          <div class="form-group">
+            <label>Компания *</label>
+            <select id="slot-company"></select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>День недели *</label>
+            <select id="slot-day">
+              <option value="1">Понедельник</option>
+              <option value="2">Вторник</option>
+              <option value="3">Среда</option>
+              <option value="4">Четверг</option>
+              <option value="5">Пятница</option>
+              <option value="6">Суббота</option>
+              <option value="7">Воскресенье</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Группа</label>
+            <input type="text" id="slot-group" placeholder="Название группы">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Начало *</label>
+            <input type="time" id="slot-time-start">
+          </div>
+          <div class="form-group">
+            <label>Конец *</label>
+            <input type="time" id="slot-time-end">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('modal-slot')">Отмена</button>
+        <button class="btn btn-primary" onclick="saveSlot()">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL: Generate Lessons
+       ============================================================ -->
+  <div class="modal-overlay" id="modal-generate">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Генерация занятий</h3>
+        <button class="modal-close" onclick="closeModal('modal-generate')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted mb-16">Создать экземпляры занятий из расписания за выбранный период. Существующие занятия не будут дублироваться.</p>
+        <div class="form-row">
+          <div class="form-group">
+            <label>С *</label>
+            <input type="date" id="generate-from">
+          </div>
+          <div class="form-group">
+            <label>По *</label>
+            <input type="date" id="generate-to">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('modal-generate')">Отмена</button>
+        <button class="btn btn-success" onclick="generateLessons()">Сгенерировать</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL: Lesson Card (complete/cancel/substitute)
+       ============================================================ -->
+  <div class="modal-overlay" id="modal-lesson">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Карточка занятия</h3>
+        <button class="modal-close" onclick="closeModal('modal-lesson')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="lesson-edit-id">
+        <div id="lesson-info" class="mb-16"></div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Количество детей *</label>
+            <input type="number" id="lesson-children" min="0" value="0">
+          </div>
+          <div class="form-group">
+            <label>Стоимость (для мастер-классов)</label>
+            <input type="number" id="lesson-price" min="0" placeholder="Либо оставить пустым">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Заметки</label>
+          <textarea id="lesson-notes" placeholder="Комментарий..."></textarea>
+        </div>
+
+        <div class="card mt-16" id="lesson-substitute-section">
+          <div class="card-header"><h2>Замена педагога</h2></div>
+          <div class="card-body">
+            <div class="form-row">
+              <div class="form-group">
+                <label>Заменяющий педагог</label>
+                <select id="lesson-substitute-teacher">
+                  <option value="">— Не менять —</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Причина</label>
+                <input type="text" id="lesson-substitute-reason" placeholder="Болезнь, отпуск...">
+              </div>
+            </div>
+            <button class="btn btn-outline btn-sm mt-16" onclick="doSubstitute()">Назначить замену</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('modal-lesson')">Закрыть</button>
+        <button class="btn btn-danger" onclick="cancelLesson()">Отменить занятие</button>
+        <button class="btn btn-success" onclick="completeLesson()">Провести ✓</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script src="/js/admin.js"></script>
+</body>
+</html>

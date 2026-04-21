@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ROLAB — Личный кабинет</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <!-- HEADER -->
+  <header class="app-header">
+    <div class="logo">ROLAB</div>
+    <div class="user-info">
+      <span id="header-user-name"></span>
+      <button class="btn btn-sm btn-outline" onclick="API.logout()" style="color:white;border-color:#475569;">Выйти</button>
+    </div>
+  </header>
+
+  <!-- NAVIGATION -->
+  <nav class="app-nav" id="main-nav">
+    <a href="#lessons" data-page="lessons" class="active">Мои занятия</a>
+    <a href="#reports" data-page="reports">Мои отчеты</a>
+    <a href="#settings" data-page="settings">Настройки</a>
+  </nav>
+
+  <div class="main-content" id="main-content">
+
+    <!-- ============================================================
+         MY LESSONS
+         ============================================================ -->
+    <div class="page-section active" id="page-lessons">
+      <h1 class="section-title">Мои занятия</h1>
+
+      <div class="filters">
+        <div class="form-group">
+          <label>С</label>
+          <input type="date" id="lessons-date-from" onchange="loadMyLessons()">
+        </div>
+        <div class="form-group">
+          <label>По</label>
+          <input type="date" id="lessons-date-to" onchange="loadMyLessons()">
+        </div>
+        <div class="form-group">
+          <label>Статус</label>
+          <select id="lessons-filter-status" onchange="loadMyLessons()">
+            <option value="">Все</option>
+            <option value="planned">Запланировано</option>
+            <option value="completed">Проведено</option>
+            <option value="cancelled">Отменено</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="stats-grid" id="lessons-stats"></div>
+
+      <div class="card">
+        <div class="card-body no-pad">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Дата</th>
+                  <th>День</th>
+                  <th>Время</th>
+                  <th>Компания</th>
+                  <th>Тип</th>
+                  <th>Группа</th>
+                  <th>Статус</th>
+                  <th>Дети</th>
+                  <th>Действие</th>
+                </tr>
+              </thead>
+              <tbody id="lessons-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         MY REPORTS
+         ============================================================ -->
+    <div class="page-section" id="page-reports">
+      <h1 class="section-title">Мои отчеты</h1>
+
+      <div class="filters">
+        <div class="form-group">
+          <label>С</label>
+          <input type="date" id="reports-date-from">
+        </div>
+        <div class="form-group">
+          <label>По</label>
+          <input type="date" id="reports-date-to">
+        </div>
+        <div class="form-group" style="display:flex;align-items:flex-end;">
+          <button class="btn btn-primary" onclick="loadMyReports()">Показать</button>
+        </div>
+      </div>
+
+      <div class="stats-grid" id="reports-stats"></div>
+
+      <div class="card">
+        <div class="card-header"><h2>По компаниям</h2></div>
+        <div class="card-body no-pad">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Компания</th>
+                  <th>Тип</th>
+                  <th>Всего</th>
+                  <th>Проведено</th>
+                  <th>Отменено</th>
+                  <th>Дети</th>
+                </tr>
+              </thead>
+              <tbody id="reports-companies-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt-16">
+        <div class="card-header"><h2>Расчет оплаты</h2></div>
+        <div class="card-body no-pad">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Дата</th>
+                  <th>Компания</th>
+                  <th>Тип</th>
+                  <th>Группа</th>
+                  <th>Дети</th>
+                  <th>Оплата</th>
+                </tr>
+              </thead>
+              <tbody id="reports-payments-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt-16" id="reports-total-card" style="display:none;">
+        <div class="card-body">
+          <div class="flex-between">
+            <span style="font-size:18px;font-weight:700;">Итого к оплате:</span>
+            <span style="font-size:24px;font-weight:700;color:var(--primary);" id="reports-total-amount">0 тг</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         SETTINGS
+         ============================================================ -->
+    <div class="page-section" id="page-settings">
+      <h1 class="section-title">Настройки</h1>
+
+      <div class="card">
+        <div class="card-header"><h2>Сменить пароль</h2></div>
+        <div class="card-body">
+          <div id="pwd-alert"></div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Текущий пароль *</label>
+              <input type="password" id="current-password">
+            </div>
+            <div class="form-group">
+              <label>Новый пароль *</label>
+              <input type="password" id="new-password" placeholder="Минимум 4 символа">
+            </div>
+          </div>
+          <button class="btn btn-primary btn-lg mt-16" onclick="changePassword()">Сменить пароль</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL: Lesson Card
+       ============================================================ -->
+  <div class="modal-overlay" id="modal-lesson">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Отметка занятия</h3>
+        <button class="modal-close" onclick="closeModal('modal-lesson')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="lesson-edit-id">
+        <div id="lesson-info" class="mb-16"></div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Количество детей *</label>
+            <input type="number" id="lesson-children" min="0" value="0">
+          </div>
+          <div class="form-group">
+            <label>Стоимость (для М-классов)</label>
+            <input type="number" id="lesson-price" min="0" placeholder="Оставить пустым">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Заметки</label>
+          <textarea id="lesson-notes" placeholder="Комментарий..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('modal-lesson')">Закрыть</button>
+        <button class="btn btn-danger" onclick="cancelLesson()">Отменить занятие</button>
+        <button class="btn btn-success btn-lg" onclick="completeLesson()">Провести ✓</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+    // ============================================================
+    // AUTH CHECK
+    // ============================================================
+    const user = API.getUser();
+    if (!user || user.role !== 'teacher') {
+      if (user && user.role === 'admin') {
+        window.location.href = '/admin.html';
+      } else {
+        window.location.href = '/login.html';
+      }
+    }
+    document.getElementById('header-user-name').textContent = user.full_name;
+
+    // ============================================================
+    // NAVIGATION
+    // ============================================================
+    let currentPage = 'lessons';
+
+    function navigateTo(page) {
+      currentPage = page;
+      document.querySelectorAll('.page-section').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.app-nav a').forEach(el => el.classList.remove('active'));
+
+      const section = document.getElementById('page-' + page);
+      const link = document.querySelector(`.app-nav a[data-page="${page}"]`);
+      if (section) section.classList.add('active');
+      if (link) link.classList.add('active');
+
+      if (page === 'lessons') loadMyLessons();
+    }
+
+    document.querySelectorAll('.app-nav a').forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const page = link.dataset.page;
+        window.location.hash = page;
+        navigateTo(page);
+      });
+    });
+
+    window.addEventListener('hashchange', () => {
+      const hash = window.location.hash.replace('#', '') || 'lessons';
+      navigateTo(hash);
+    });
+
+    // ============================================================
+    // MODAL
+    // ============================================================
+    function openModal(id) {
+      document.getElementById(id).classList.add('show');
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('show');
+    }
+
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.classList.remove('show');
+      });
+    });
+
+    // ============================================================
+    // MY LESSONS
+    // ============================================================
+    async function loadMyLessons() {
+      try {
+        const dateFrom = document.getElementById('lessons-date-from').value;
+        const dateTo = document.getElementById('lessons-date-to').value;
+        const status = document.getElementById('lessons-filter-status').value;
+
+        let query = '/lessons?';
+        if (dateFrom) query += `date_from=${dateFrom}&`;
+        if (dateTo) query += `date_to=${dateTo}&`;
+        if (status) query += `status=${status}&`;
+
+        const lessons = await API.get(query);
+        const tbody = document.getElementById('lessons-body');
+
+        // Stats
+        const completed = lessons.filter(l => l.status === 'completed').length;
+        const planned = lessons.filter(l => l.status === 'planned').length;
+        const cancelled = lessons.filter(l => l.status === 'cancelled').length;
+        const totalChildren = lessons.filter(l => l.status === 'completed').reduce((s, l) => s + l.children_count, 0);
+
+        document.getElementById('lessons-stats').innerHTML = `
+          <div class="stat-card">
+            <div class="stat-value">${lessons.length}</div>
+            <div class="stat-label">Всего</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" style="color:var(--success)">${completed}</div>
+            <div class="stat-label">Проведено</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" style="color:var(--warning)">${planned}</div>
+            <div class="stat-label">Запланировано</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${totalChildren}</div>
+            <div class="stat-label">Детей</div>
+          </div>
+        `;
+
+        if (lessons.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="9" class="empty-state">Нет занятий за выбранный период</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = lessons.map(l => {
+          // Get day of week from date
+          const d = new Date(l.date + 'T00:00:00');
+          const jsDay = d.getDay();
+          const isoDay = jsDay === 0 ? 7 : jsDay;
+          const dayName = DAYS_SHORT[isoDay];
+
+          const actionBtn = l.status === 'planned'
+            ? `<button class="btn btn-sm btn-success" onclick="openLessonModal(${l.id})">Отметить</button>`
+            : `<button class="btn btn-sm btn-outline" onclick="openLessonModal(${l.id})">Просмотр</button>`;
+
+          return `
+            <tr>
+              <td>${formatDate(l.date)}</td>
+              <td>${dayName}</td>
+              <td>${l.time_start}–${l.time_end}</td>
+              <td>${escHtml(l.company_name)}</td>
+              <td>${companyTypeBadge(l.company_type)}</td>
+              <td>${escHtml(l.group_name) || '—'}</td>
+              <td>${statusBadge(l.status)}</td>
+              <td>${l.status === 'completed' ? l.children_count : '—'}</td>
+              <td>${actionBtn}</td>
+            </tr>
+          `;
+        }).join('');
+      } catch (e) {
+        console.error('Error loading lessons:', e);
+      }
+    }
+
+    async function openLessonModal(id) {
+      try {
+        const lessons = await API.get('/lessons?');
+        const l = lessons.find(x => x.id === id);
+        if (!l) { alert('Занятие не найдено'); return; }
+
+        document.getElementById('lesson-edit-id').value = l.id;
+        document.getElementById('lesson-children').value = l.children_count || 0;
+        document.getElementById('lesson-notes').value = l.notes || '';
+
+        document.getElementById('lesson-info').innerHTML = `
+          <table style="width:100%;">
+            <tr><td class="text-muted" style="width:140px;">Дата:</td><td><strong>${formatDate(l.date)}</strong></td></tr>
+            <tr><td class="text-muted">Время:</td><td>${l.time_start}–${l.time_end}</td></tr>
+            <tr><td class="text-muted">Компания:</td><td>${escHtml(l.company_name)} ${companyTypeBadge(l.company_type)}</td></tr>
+            <tr><td class="text-muted">Группа:</td><td>${escHtml(l.group_name) || '—'}</td></tr>
+            <tr><td class="text-muted">Статус:</td><td>${statusBadge(l.status)}</td></tr>
+          </table>
+        `;
+
+        openModal('modal-lesson');
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    async function completeLesson() {
+      const id = document.getElementById('lesson-edit-id').value;
+      const children_count = parseInt(document.getElementById('lesson-children').value);
+      const price_raw = document.getElementById('lesson-price').value;
+      const price = price_raw ? parseInt(price_raw) : null;
+      const notes = document.getElementById('lesson-notes').value.trim();
+
+      if (isNaN(children_count) || children_count < 0) {
+        alert('Укажите корректное количество детей');
+        return;
+      }
+
+      try {
+        await API.put(`/lessons/${id}/complete`, { children_count, price, notes });
+        closeModal('modal-lesson');
+        loadMyLessons();
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    async function cancelLesson() {
+      const id = document.getElementById('lesson-edit-id').value;
+      const notes = document.getElementById('lesson-notes').value.trim();
+      if (!confirm('Отменить занятие?')) return;
+
+      try {
+        await API.put(`/lessons/${id}/cancel`, { notes });
+        closeModal('modal-lesson');
+        loadMyLessons();
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    // ============================================================
+    // MY REPORTS
+    // ============================================================
+    async function loadMyReports() {
+      const dateFrom = document.getElementById('reports-date-from').value;
+      const dateTo = document.getElementById('reports-date-to').value;
+
+      if (!dateFrom || !dateTo) {
+        alert('Укажите период');
+        return;
+      }
+
+      try {
+        // Report summary
+        const report = await API.get(`/reports/summary?date_from=${dateFrom}&date_to=${dateTo}`);
+        const t = report.totals;
+
+        document.getElementById('reports-stats').innerHTML = `
+          <div class="stat-card">
+            <div class="stat-value">${t.total_lessons || 0}</div>
+            <div class="stat-label">Всего занятий</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" style="color:var(--success)">${t.completed || 0}</div>
+            <div class="stat-label">Проведено</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" style="color:var(--danger)">${t.cancelled || 0}</div>
+            <div class="stat-label">Отменено</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${t.total_children || 0}</div>
+            <div class="stat-label">Детей</div>
+          </div>
+        `;
+
+        // By company
+        const companyBody = document.getElementById('reports-companies-body');
+        companyBody.innerHTML = report.byCompany.map(r => `
+          <tr>
+            <td><strong>${escHtml(r.company_name)}</strong></td>
+            <td>${companyTypeBadge(r.company_type)}</td>
+            <td>${r.total_lessons}</td>
+            <td class="text-success text-bold">${r.completed}</td>
+            <td class="text-danger">${r.cancelled}</td>
+            <td>${r.total_children}</td>
+          </tr>
+        `).join('') || '<tr><td colspan="6" class="empty-state">Нет данных</td></tr>';
+
+        // Payments
+        const payments = await API.get(`/payments/calculate?date_from=${dateFrom}&date_to=${dateTo}`);
+        const payBody = document.getElementById('reports-payments-body');
+        payBody.innerHTML = payments.details.map(d => `
+          <tr>
+            <td>${formatDate(d.date)}</td>
+            <td>${escHtml(d.company_name)}</td>
+            <td>${companyTypeBadge(d.company_type)}</td>
+            <td>${escHtml(d.group_name) || '—'}</td>
+            <td>${d.children_count}</td>
+            <td class="text-bold">${formatMoney(d.payment)}</td>
+          </tr>
+        `).join('') || '<tr><td colspan="6" class="empty-state">Нет данных</td></tr>';
+
+        document.getElementById('reports-total-card').style.display = '';
+        document.getElementById('reports-total-amount').textContent = formatMoney(payments.grand_total);
+      } catch (e) {
+        alert(e.message);
+      }
+    }
+
+    // ============================================================
+    // CHANGE PASSWORD
+    // ============================================================
+    async function changePassword() {
+      const current = document.getElementById('current-password').value;
+      const newPwd = document.getElementById('new-password').value;
+      const alertDiv = document.getElementById('pwd-alert');
+      alertDiv.innerHTML = '';
+
+      if (!current || !newPwd) {
+        alertDiv.innerHTML = '<div class="alert alert-danger">Заполните оба поля</div>';
+        return;
+      }
+
+      if (newPwd.length < 4) {
+        alertDiv.innerHTML = '<div class="alert alert-danger">Новый пароль минимум 4 символа</div>';
+        return;
+      }
+
+      try {
+        const result = await API.put('/auth/change-password', {
+          current_password: current,
+          new_password: newPwd
+        });
+        alertDiv.innerHTML = '<div class="alert alert-success">Пароль успешно изменен!</div>';
+        document.getElementById('current-password').value = '';
+        document.getElementById('new-password').value = '';
+      } catch (e) {
+        alertDiv.innerHTML = `<div class="alert alert-danger">${e.message}</div>`;
+      }
+    }
+
+    // ============================================================
+    // INIT
+    // ============================================================
+    (function init() {
+      const week = getCurrentWeekRange();
+      const month = getCurrentMonthRange();
+
+      document.getElementById('lessons-date-from').value = week.from;
+      document.getElementById('lessons-date-to').value = week.to;
+      document.getElementById('reports-date-from').value = month.from;
+      document.getElementById('reports-date-to').value = month.to;
+
+      const hash = window.location.hash.replace('#', '') || 'lessons';
+      navigateTo(hash);
+    })();
+  </script>
+</body>
+</html>
