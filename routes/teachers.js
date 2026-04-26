@@ -1,232 +1,237 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { getDb } = require('../database/connection');
+const User = require('../models/User');
+const TeacherRate = require('../models/TeacherRate');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
 
 const router = express.Router();
-router.use(authMiddleware, adminOnly);
+router.use(authMiddleware);
 
-// Generate random password
 function generatePassword(length = 6) {
   const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
   let pwd = '';
-  for (let i = 0; i < length; i++) {
-    pwd += chars[Math.floor(Math.random() * chars.length)];
-  }
+  for (let i = 0; i < length; i++) pwd += chars[Math.floor(Math.random() * chars.length)];
   return pwd;
 }
 
-// GET /api/teachers
-router.get('/', (req, res) => {
-  const db = getDb();
+async function attachCompanies(teacher) {
+  const rates = await TeacherRate.find({ teacher_id: teacher._id }).populate('company_id');
+  return rates
+    .filter(r => r.company_id && r.company_id.active)
+    .map(r => ({
+      id: r._id.toString(),
+      teacher_id: teacher._id.toString(),
+      company_id: r.company_id._id.toString(),
+      company_name: r.company_id.name,
+      company_type: r.company_id.type,
+      rate: r.rate
+    }));
+}
+
+// GET /api/teachers — только для админа/dev
+router.get('/', adminOnly, async (req, res) => {
   try {
     const { search, active } = req.query;
-    let sql = "SELECT id, username, full_name, phone, plain_password, active, created_at FROM users WHERE role = 'teacher'";
-    const params = [];
-
+    const filter = { role: 'teacher' };
     if (active !== undefined) {
-      sql += ' AND active = ?';
-      params.push(Number(active));
+      filter.active = active === '1' || active === 'true';
     } else {
-      sql += ' AND active = 1';
+      filter.active = true;
     }
+    if (search) filter.$or = [
+      { full_name: { $regex: search, $options: 'i' } },
+      { username: { $regex: search, $options: 'i' } }
+    ];
 
-    if (search) {
-      sql += ' AND (full_name LIKE ? OR username LIKE ?)';
-      params.push(`%${search}%`, `%${search}%`);
-    }
+    const teachers = await User.find(filter).sort({ full_name: 1 });
+    const result = await Promise.all(teachers.map(async t => ({
+      id: t._id.toString(),
+      username: t.username,
+      full_name: t.full_name,
+      phone: t.phone,
+      plain_password: t.plain_password,
+      active: t.active,
+      created_at: t.created_at,
+      companies: await attachCompanies(t)
+    })));
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
-    sql += ' ORDER BY full_name';
-    const teachers = db.prepare(sql).all(...params);
+// GET /api/teachers/list-names — краткий список педагогов (для выбора замены)
+router.get('/list-names', async (req, res) => {
+  try {
+    const teachers = await User.find({ role: 'teacher', active: true }, 'full_name').sort({ full_name: 1 });
+    res.json(teachers.map(t => ({ id: t._id.toString(), full_name: t.full_name })));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
-    // Attach companies for each teacher
-    for (const t of teachers) {
-      t.companies = db.prepare(`
-        SELECT tr.*, c.name as company_name, c.type as company_type
-        FROM teacher_rates tr
-        JOIN companies c ON c.id = tr.company_id
-        WHERE tr.teacher_id = ? AND c.active = 1
-      `).all(t.id);
-    }
-
-    res.json(teachers);
-  } finally {
-    db.close();
+// GET /api/teachers/me/companies — учитель видит свои компании
+router.get('/me/companies', async (req, res) => {
+  try {
+    const rates = await TeacherRate.find({ teacher_id: req.user.id }).populate('company_id');
+    const companies = rates
+      .filter(r => r.company_id && r.company_id.active)
+      .map(r => ({
+        id: r.company_id._id.toString(),
+        name: r.company_id.name,
+        type: r.company_id.type,
+        rate: r.rate
+      }));
+    res.json(companies);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
 // GET /api/teachers/:id
-router.get('/:id', (req, res) => {
-  const db = getDb();
+router.get('/:id', adminOnly, async (req, res) => {
   try {
-    const teacher = db.prepare(
-      "SELECT id, username, full_name, phone, plain_password, active, created_at FROM users WHERE id = ? AND role = 'teacher'"
-    ).get(req.params.id);
+    const teacher = await User.findOne({ _id: req.params.id, role: 'teacher' });
+    if (!teacher) return res.status(404).json({ error: 'Педагог не найден' });
 
-    if (!teacher) {
-      return res.status(404).json({ error: 'Педагог не найден' });
-    }
-
-    teacher.rates = db.prepare(`
-      SELECT tr.*, c.name as company_name, c.type as company_type
-      FROM teacher_rates tr
-      JOIN companies c ON c.id = tr.company_id
-      WHERE tr.teacher_id = ?
-    `).all(req.params.id);
-
-    res.json(teacher);
-  } finally {
-    db.close();
+    const rates = await TeacherRate.find({ teacher_id: teacher._id }).populate('company_id');
+    res.json({
+      id: teacher._id.toString(),
+      username: teacher.username,
+      full_name: teacher.full_name,
+      phone: teacher.phone,
+      plain_password: teacher.plain_password,
+      active: teacher.active,
+      created_at: teacher.created_at,
+      rates: rates.map(r => ({
+        id: r._id.toString(),
+        teacher_id: teacher._id.toString(),
+        company_id: r.company_id ? r.company_id._id.toString() : null,
+        company_name: r.company_id ? r.company_id.name : null,
+        company_type: r.company_id ? r.company_id.type : null,
+        rate: r.rate
+      }))
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
-// POST /api/teachers — auto-generates password
-router.post('/', (req, res) => {
+// POST /api/teachers
+router.post('/', adminOnly, async (req, res) => {
   const { username, full_name, phone, company_ids } = req.body;
+  if (!username || !full_name) return res.status(400).json({ error: 'Укажите логин и ФИО' });
 
-  if (!username || !full_name) {
-    return res.status(400).json({ error: 'Укажите логин и ФИО' });
-  }
-
-  const db = getDb();
   try {
-    const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
-    if (existing) {
-      return res.status(400).json({ error: 'Логин уже занят' });
-    }
+    const existing = await User.findOne({ username });
+    if (existing) return res.status(400).json({ error: 'Логин уже занят' });
 
     const plainPassword = generatePassword();
     const hash = bcrypt.hashSync(plainPassword, 10);
-
-    const insertUser = db.prepare(`
-      INSERT INTO users (username, password_hash, plain_password, role, full_name, phone)
-      VALUES (?, ?, ?, 'teacher', ?, ?)
-    `);
-
-    const insertRate = db.prepare(`
-      INSERT INTO teacher_rates (teacher_id, company_id, rate) VALUES (?, ?, NULL)
-    `);
-
-    const transaction = db.transaction(() => {
-      const result = insertUser.run(username, hash, plainPassword, full_name, phone || '');
-      const teacherId = result.lastInsertRowid;
-
-      if (company_ids && Array.isArray(company_ids)) {
-        for (const cid of company_ids) {
-          insertRate.run(teacherId, cid);
-        }
-      }
-
-      return teacherId;
+    const teacher = await User.create({
+      username, password_hash: hash, plain_password: plainPassword,
+      role: 'teacher', full_name, phone: phone || ''
     });
 
-    const teacherId = transaction();
-    const teacher = db.prepare(
-      'SELECT id, username, full_name, phone, plain_password, active, created_at FROM users WHERE id = ?'
-    ).get(teacherId);
+    if (company_ids && Array.isArray(company_ids)) {
+      for (const cid of company_ids) {
+        await TeacherRate.create({ teacher_id: teacher._id, company_id: cid, rate: null });
+      }
+    }
 
-    res.status(201).json(teacher);
-  } finally {
-    db.close();
+    res.status(201).json({
+      id: teacher._id.toString(),
+      username: teacher.username,
+      full_name: teacher.full_name,
+      phone: teacher.phone,
+      plain_password: teacher.plain_password,
+      active: teacher.active,
+      created_at: teacher.created_at
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
 // PUT /api/teachers/:id
-router.put('/:id', (req, res) => {
+router.put('/:id', adminOnly, async (req, res) => {
   const { full_name, phone, password, active } = req.body;
-  const db = getDb();
   try {
-    const existing = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'teacher'").get(req.params.id);
-    if (!existing) {
-      return res.status(404).json({ error: 'Педагог не найден' });
-    }
+    const teacher = await User.findOne({ _id: req.params.id, role: 'teacher' });
+    if (!teacher) return res.status(404).json({ error: 'Педагог не найден' });
 
+    if (full_name !== undefined) teacher.full_name = full_name;
+    if (phone !== undefined) teacher.phone = phone;
+    if (active !== undefined) teacher.active = active;
     if (password) {
-      if (password.length < 4) {
-        return res.status(400).json({ error: 'Пароль минимум 4 символа' });
-      }
-      const hash = bcrypt.hashSync(password, 10);
-      db.prepare('UPDATE users SET password_hash = ?, plain_password = ? WHERE id = ?').run(hash, password, req.params.id);
+      if (password.length < 4) return res.status(400).json({ error: 'Пароль минимум 4 символа' });
+      teacher.password_hash = bcrypt.hashSync(password, 10);
+      teacher.plain_password = password;
     }
+    await teacher.save();
 
-    db.prepare(`
-      UPDATE users SET
-        full_name = COALESCE(?, full_name),
-        phone = COALESCE(?, phone),
-        active = COALESCE(?, active)
-      WHERE id = ?
-    `).run(
-      full_name || null,
-      phone !== undefined ? phone : null,
-      active !== undefined ? active : null,
-      req.params.id
-    );
-
-    const teacher = db.prepare(
-      'SELECT id, username, full_name, phone, plain_password, active, created_at FROM users WHERE id = ?'
-    ).get(req.params.id);
-
-    res.json(teacher);
-  } finally {
-    db.close();
+    res.json({
+      id: teacher._id.toString(),
+      username: teacher.username,
+      full_name: teacher.full_name,
+      phone: teacher.phone,
+      plain_password: teacher.plain_password,
+      active: teacher.active,
+      created_at: teacher.created_at
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
-// DELETE /api/teachers/:id (soft delete)
-router.delete('/:id', (req, res) => {
-  const db = getDb();
+// DELETE /api/teachers/:id
+router.delete('/:id', adminOnly, async (req, res) => {
   try {
-    db.prepare("UPDATE users SET active = 0 WHERE id = ? AND role = 'teacher'").run(req.params.id);
+    await User.findOneAndUpdate({ _id: req.params.id, role: 'teacher' }, { active: false });
     res.json({ success: true });
-  } finally {
-    db.close();
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
 // GET /api/teachers/:id/rates
-router.get('/:id/rates', (req, res) => {
-  const db = getDb();
+router.get('/:id/rates', adminOnly, async (req, res) => {
   try {
-    const rates = db.prepare(`
-      SELECT tr.*, c.name as company_name, c.type as company_type
-      FROM teacher_rates tr
-      JOIN companies c ON c.id = tr.company_id
-      WHERE tr.teacher_id = ?
-    `).all(req.params.id);
-    res.json(rates);
-  } finally {
-    db.close();
+    const rates = await TeacherRate.find({ teacher_id: req.params.id }).populate('company_id');
+    res.json(rates.map(r => ({
+      id: r._id.toString(),
+      teacher_id: r.teacher_id.toString(),
+      company_id: r.company_id ? r.company_id._id.toString() : null,
+      company_name: r.company_id ? r.company_id.name : null,
+      company_type: r.company_id ? r.company_id.type : null,
+      rate: r.rate
+    })));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
-// PUT /api/teachers/:id/rates
-router.put('/:id/rates', (req, res) => {
-  const { rates } = req.body; // [{ company_id, rate }]
-  if (!Array.isArray(rates)) {
-    return res.status(400).json({ error: 'rates должен быть массивом' });
-  }
+// PUT /api/teachers/:id/rates — только админ может менять ставки
+router.put('/:id/rates', adminOnly, async (req, res) => {
+  const { rates } = req.body;
+  if (!Array.isArray(rates)) return res.status(400).json({ error: 'rates должен быть массивом' });
 
-  const db = getDb();
   try {
-    const transaction = db.transaction(() => {
-      db.prepare('DELETE FROM teacher_rates WHERE teacher_id = ?').run(req.params.id);
-      const stmt = db.prepare('INSERT INTO teacher_rates (teacher_id, company_id, rate) VALUES (?, ?, ?)');
-      for (const r of rates) {
-        stmt.run(req.params.id, r.company_id, r.rate || null);
-      }
-    });
-    transaction();
-
-    const updatedRates = db.prepare(`
-      SELECT tr.*, c.name as company_name, c.type as company_type
-      FROM teacher_rates tr
-      JOIN companies c ON c.id = tr.company_id
-      WHERE tr.teacher_id = ?
-    `).all(req.params.id);
-
-    res.json(updatedRates);
-  } finally {
-    db.close();
+    await TeacherRate.deleteMany({ teacher_id: req.params.id });
+    for (const r of rates) {
+      await TeacherRate.create({ teacher_id: req.params.id, company_id: r.company_id, rate: r.rate || null });
+    }
+    const updated = await TeacherRate.find({ teacher_id: req.params.id }).populate('company_id');
+    res.json(updated.map(r => ({
+      id: r._id.toString(),
+      teacher_id: r.teacher_id.toString(),
+      company_id: r.company_id ? r.company_id._id.toString() : null,
+      company_name: r.company_id ? r.company_id.name : null,
+      company_type: r.company_id ? r.company_id.type : null,
+      rate: r.rate
+    })));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 

@@ -1,115 +1,102 @@
 const express = require('express');
-const { getDb } = require('../database/connection');
+const Lesson = require('../models/Lesson');
+const TeacherRate = require('../models/TeacherRate');
 const { authMiddleware } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authMiddleware);
 
 /**
- * Payment calculation logic:
- *
- * Kindergarten (садик):
- *   payment = 5000 + max(0, children_count - 5) * 1000
- *
- * School (школа):
- *   payment = custom_rate (from teacher_rates) OR 3500 (default)
+ * Садик: 5000 + (children - 5) * 1000, максимум 10000
+ * Школа: ставка учителя или 3500 по умолчанию
  */
 function calculatePayment(companyType, childrenCount, customRate, manualPrice) {
-  // If a manual price was entered (masterclass or override), it takes absolute priority
   if (manualPrice !== null && manualPrice !== undefined) {
     return parseInt(manualPrice) || 0;
   }
-
-  // Fallbacks based on company type
-  if (companyType === 'masterclass') {
-    return 0; // If they forgot to enter manual price for a masterclass
-  } else if (companyType === 'kindergarten') {
+  if (companyType === 'kindergarten') {
     const base = 5000;
     const extra = Math.max(0, childrenCount - 5) * 1000;
-    return base + extra;
-  } else {
-    // school
-    return customRate || 3500;
+    return Math.min(10000, base + extra);
   }
+  return customRate || 3500;
 }
 
 // GET /api/payments/calculate
-router.get('/calculate', (req, res) => {
-  const db = getDb();
+router.get('/calculate', async (req, res) => {
   try {
     const { date_from, date_to, teacher_id, company_id } = req.query;
-
     if (!date_from || !date_to) {
       return res.status(400).json({ error: 'Укажите date_from и date_to' });
     }
 
-    let teacherFilter = '';
-    const params = [date_from, date_to];
+    const filter = {
+      status: 'completed',
+      date: { $gte: date_from, $lte: date_to }
+    };
 
     if (req.user.role === 'teacher') {
-      teacherFilter = 'AND l.actual_teacher_id = ?';
-      params.push(req.user.id);
+      filter.actual_teacher_id = req.user.id;
     } else if (teacher_id) {
-      teacherFilter = 'AND l.actual_teacher_id = ?';
-      params.push(teacher_id);
+      filter.actual_teacher_id = teacher_id;
     }
 
-    let companyFilter = '';
+    let lessons = await Lesson.find(filter)
+      .populate({
+        path: 'schedule_slot_id',
+        populate: [
+          { path: 'company_id', select: 'name type' }
+        ]
+      })
+      .populate('actual_teacher_id', 'full_name')
+      .sort({ date: 1 });
+
+    // Фильтр по компании через populate
     if (company_id) {
-      companyFilter = 'AND ss.company_id = ?';
-      params.push(company_id);
+      lessons = lessons.filter(l =>
+        l.schedule_slot_id?.company_id?._id?.toString() === company_id
+      );
     }
 
-    // Get all completed lessons with necessary data
-    const lessons = db.prepare(`
-      SELECT
-        l.id, l.date, l.children_count, l.price, l.actual_teacher_id,
-        ss.company_id, ss.group_name,
-        u.full_name as teacher_name,
-        c.name as company_name, c.type as company_type
-      FROM lessons l
-      JOIN schedule_slots ss ON ss.id = l.schedule_slot_id
-      JOIN users u ON u.id = l.actual_teacher_id
-      JOIN companies c ON c.id = ss.company_id
-      WHERE l.status = 'completed'
-        AND l.date BETWEEN ? AND ?
-        ${teacherFilter}
-        ${companyFilter}
-      ORDER BY u.full_name, l.date
-    `).all(...params);
+    // Убрать занятия без расписания (удалённые слоты)
+    lessons = lessons.filter(l => l.schedule_slot_id && l.schedule_slot_id.company_id);
 
-    // Get all custom rates
-    const rates = db.prepare('SELECT * FROM teacher_rates').all();
+    // Загрузить все ставки учителей
+    const allRates = await TeacherRate.find({});
     const rateMap = {};
-    for (const r of rates) {
+    for (const r of allRates) {
       rateMap[`${r.teacher_id}_${r.company_id}`] = r.rate;
     }
 
-    // Calculate payments
     const paymentDetails = [];
     const teacherTotals = {};
 
     for (const lesson of lessons) {
-      const customRate = rateMap[`${lesson.actual_teacher_id}_${lesson.company_id}`];
-      const payment = calculatePayment(lesson.company_type, lesson.children_count, customRate, lesson.price);
+      const companyType = lesson.schedule_slot_id.company_id.type;
+      const companyName = lesson.schedule_slot_id.company_id.name;
+      const companyIdStr = lesson.schedule_slot_id.company_id._id.toString();
+      const teacherIdStr = lesson.actual_teacher_id._id.toString();
+      const teacherName = lesson.actual_teacher_id.full_name;
+
+      const customRate = rateMap[`${teacherIdStr}_${companyIdStr}`];
+      const payment = calculatePayment(companyType, lesson.children_count || 0, customRate, lesson.price);
 
       paymentDetails.push({
-        lesson_id: lesson.id,
+        lesson_id: lesson._id.toString(),
         date: lesson.date,
-        teacher_id: lesson.actual_teacher_id,
-        teacher_name: lesson.teacher_name,
-        company_name: lesson.company_name,
-        company_type: lesson.company_type,
-        group_name: lesson.group_name,
-        children_count: lesson.children_count,
+        teacher_id: teacherIdStr,
+        teacher_name: teacherName,
+        company_name: companyName,
+        company_type: companyType,
+        group_name: lesson.schedule_slot_id.group_name,
+        children_count: lesson.children_count || 0,
         payment
       });
 
-      // Aggregate by teacher
-      if (!teacherTotals[lesson.actual_teacher_id]) {
-        teacherTotals[lesson.actual_teacher_id] = {
-          teacher_id: lesson.actual_teacher_id,
-          teacher_name: lesson.teacher_name,
+      if (!teacherTotals[teacherIdStr]) {
+        teacherTotals[teacherIdStr] = {
+          teacher_id: teacherIdStr,
+          teacher_name: teacherName,
           total_lessons: 0,
           total_payment: 0,
           total_children: 0,
@@ -117,24 +104,18 @@ router.get('/calculate', (req, res) => {
         };
       }
 
-      const tt = teacherTotals[lesson.actual_teacher_id];
+      const tt = teacherTotals[teacherIdStr];
       tt.total_lessons++;
       tt.total_payment += payment;
-      tt.total_children += lesson.children_count;
+      tt.total_children += lesson.children_count || 0;
 
-      if (!tt.by_company[lesson.company_id]) {
-        tt.by_company[lesson.company_id] = {
-          company_name: lesson.company_name,
-          company_type: lesson.company_type,
-          lessons: 0,
-          payment: 0
-        };
+      if (!tt.by_company[companyIdStr]) {
+        tt.by_company[companyIdStr] = { company_name: companyName, company_type: companyType, lessons: 0, payment: 0 };
       }
-      tt.by_company[lesson.company_id].lessons++;
-      tt.by_company[lesson.company_id].payment += payment;
+      tt.by_company[companyIdStr].lessons++;
+      tt.by_company[companyIdStr].payment += payment;
     }
 
-    // Convert by_company from object to array
     const summaryByTeacher = Object.values(teacherTotals).map(t => ({
       ...t,
       by_company: Object.values(t.by_company)
@@ -148,8 +129,8 @@ router.get('/calculate', (req, res) => {
       summary_by_teacher: summaryByTeacher,
       details: paymentDetails
     });
-  } finally {
-    db.close();
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 

@@ -4,21 +4,20 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 
+const { connectDb } = require('./database/connection');
 const initializeDb = require('./database/init');
 
 async function startServer() {
-  // Initialize database
+  await connectDb();
   await initializeDb();
 
   const app = express();
   const PORT = process.env.PORT || 3000;
 
-  // Middleware
   app.use(cors());
   app.use(express.json());
   app.use(express.static(path.join(__dirname, 'public')));
 
-  // API Routes
   app.use('/api/auth', require('./routes/auth'));
   app.use('/api/companies', require('./routes/companies'));
   app.use('/api/teachers', require('./routes/teachers'));
@@ -28,7 +27,6 @@ async function startServer() {
   app.use('/api/payments', require('./routes/payments'));
   app.use('/api/dev', require('./routes/dev'));
 
-  // SPA fallback — serve index.html for non-API routes
   app.get('*', (req, res) => {
     if (!req.path.startsWith('/api')) {
       const filePath = path.join(__dirname, 'public', req.path);
@@ -39,15 +37,14 @@ async function startServer() {
     }
   });
 
-  // Error handler
   app.use((err, req, res, next) => {
-    console.error('❌ Ошибка:', err.message);
+    console.error('Ошибка:', err.message);
     res.status(500).json({ error: 'Внутренняя ошибка сервера' });
   });
 
   app.listen(PORT, () => {
-    console.log(`🚀 ROLAB система запущена: http://localhost:${PORT}`);
-    console.log(`📋 Вход: admin / admin123`);
+    console.log(`ROLAB система запущена: http://localhost:${PORT}`);
+    console.log(`Вход: admin1 / Admin@1234  или  admin2 / Rolab@5678`);
   });
 }
 

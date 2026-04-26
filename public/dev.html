@@ -3,84 +3,420 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ROLAB — Dev Panel</title>
+  <title>ROLAB — Панель разработчика</title>
   <link rel="stylesheet" href="/css/style.css">
-  <script src="/js/api.js"></script>
+  <style>
+    .dev-badge { display:inline-block;background:#7c3aed;color:#fff;font-size:11px;padding:2px 8px;border-radius:4px;margin-left:8px;vertical-align:middle; }
+    .stat-box { background:#1e1b4b;color:#e0e7ff;border-radius:10px;padding:16px 20px;min-width:130px;text-align:center; }
+    .stat-box .val { font-size:2rem;font-weight:800; }
+    .stat-box .lbl { font-size:12px;opacity:.7;margin-top:2px; }
+    .stats-row { display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px; }
+    .pw-cell { font-family:monospace;background:#f1f5f9;padding:2px 6px;border-radius:4px;font-size:12px; }
+    .tab-nav { display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap; }
+    .tab-btn { padding:7px 18px;border:2px solid #e2e8f0;background:#fff;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;color:#475569; }
+    .tab-btn.active { border-color:#7c3aed;background:#7c3aed;color:#fff; }
+    .tab-panel { display:none; }
+    .tab-panel.active { display:block; }
+    .danger-btn { background:#dc2626;color:#fff;border:none;padding:5px 12px;border-radius:6px;cursor:pointer;font-size:12px; }
+    .danger-btn:hover { background:#b91c1c; }
+  </style>
 </head>
 <body>
-  <header class="app-header">
-    <div class="logo">ROLAB <span>| DEV</span></div>
-    <div style="flex: 1"></div>
+  <header class="app-header" style="background:#1e1b4b;">
+    <div class="logo">ROLAB <span class="dev-badge">DEV</span></div>
     <div class="user-info">
-      <span id="header-user-name"></span>
-      <button class="btn btn-outline btn-sm" onclick="API.logout()">Выйти</button>
+      <span id="header-user-name" style="color:#c4b5fd;"></span>
+      <button class="btn btn-sm btn-outline" onclick="API.logout()" style="color:#c4b5fd;border-color:#4c1d95;">Выйти</button>
     </div>
   </header>
 
-  <div class="app-layout">
-    <aside class="app-sidebar">
-      <nav class="app-nav">
-        <a href="#users" class="active" data-page="users">Все пользователи</a>
-        <a href="/admin.html">👉 Админ Панель (Полный Доступ)</a>
-      </nav>
-    </aside>
+  <div class="main-content" style="padding:24px;">
 
-    <main class="app-content">
-      <div class="page-section active" id="page-users">
-        <div class="card">
-          <div class="card-header">
-            <h2>Все пользователи системы</h2>
-          </div>
-          <div class="card-body no-pad">
-            <div class="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Роль</th>
-                    <th>ФИО</th>
-                    <th>Логин</th>
-                    <th>Сырой пароль</th>
-                    <th>Статус</th>
-                  </tr>
-                </thead>
-                <tbody id="dev-users-body"></tbody>
-              </table>
-            </div>
+    <h2 style="margin-bottom:12px;">Статистика базы данных</h2>
+    <div class="stats-row" id="db-stats"></div>
+
+    <div class="tab-nav">
+      <button class="tab-btn active" data-tab="users" onclick="showTab('users',this)">Пользователи</button>
+      <button class="tab-btn" data-tab="companies" onclick="showTab('companies',this)">Компании</button>
+      <button class="tab-btn" data-tab="schedule" onclick="showTab('schedule',this)">Расписание</button>
+      <button class="tab-btn" data-tab="lessons" onclick="showTab('lessons',this)">Занятия</button>
+      <button class="tab-btn" data-tab="subs" onclick="showTab('subs',this)">Замены</button>
+      <button class="tab-btn" data-tab="create-user" onclick="showTab('create-user',this)">+ Пользователь</button>
+    </div>
+
+    <!-- USERS -->
+    <div class="tab-panel active" id="tab-users">
+      <div class="card">
+        <div class="card-header"><h2>Все пользователи</h2></div>
+        <div class="card-body no-pad">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>ФИО</th><th>Логин</th><th>Пароль</th><th>Роль</th><th>Телефон</th><th>Активен</th><th>Действия</th></tr>
+              </thead>
+              <tbody id="users-body"></tbody>
+            </table>
           </div>
         </div>
       </div>
-    </main>
+    </div>
+
+    <!-- COMPANIES -->
+    <div class="tab-panel" id="tab-companies">
+      <div class="card">
+        <div class="card-header"><h2>Все компании</h2></div>
+        <div class="card-body no-pad">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Название</th><th>Тип</th><th>Адрес</th><th>Контакт</th><th>Телефон</th><th>Активна</th></tr>
+              </thead>
+              <tbody id="companies-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCHEDULE -->
+    <div class="tab-panel" id="tab-schedule">
+      <div class="card">
+        <div class="card-header"><h2>Все слоты расписания</h2></div>
+        <div class="card-body no-pad">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Педагог</th><th>Компания</th><th>Тип</th><th>День</th><th>Время</th><th>Группа</th><th>Активен</th></tr>
+              </thead>
+              <tbody id="schedule-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LESSONS -->
+    <div class="tab-panel" id="tab-lessons">
+      <div class="filters" style="margin-bottom:16px;">
+        <div class="form-group"><label>С</label><input type="date" id="lessons-from"></div>
+        <div class="form-group"><label>По</label><input type="date" id="lessons-to"></div>
+        <div class="form-group">
+          <label>Статус</label>
+          <select id="lessons-status">
+            <option value="">Все</option>
+            <option value="planned">Запланировано</option>
+            <option value="completed">Проведено</option>
+            <option value="cancelled">Отменено</option>
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;align-items:flex-end;">
+          <button class="btn btn-primary" onclick="loadLessons()">Загрузить</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Занятия <span id="lessons-count" style="font-size:13px;color:#64748b;"></span></h2></div>
+        <div class="card-body no-pad">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Дата</th><th>Время</th><th>Компания</th><th>Тип</th>
+                  <th>Педагог (факт)</th><th>Исходный</th><th>Группа</th>
+                  <th>Статус</th><th>Дети</th><th>Заметки</th>
+                </tr>
+              </thead>
+              <tbody id="lessons-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SUBSTITUTIONS -->
+    <div class="tab-panel" id="tab-subs">
+      <div class="card">
+        <div class="card-header"><h2>Все замены</h2></div>
+        <div class="card-body no-pad">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Дата занятия</th><th>Исходный педагог</th><th>Заменяющий</th><th>Причина</th><th>Назначена</th></tr>
+              </thead>
+              <tbody id="subs-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CREATE USER -->
+    <div class="tab-panel" id="tab-create-user">
+      <div class="card" style="max-width:600px;">
+        <div class="card-header"><h2>Создать пользователя</h2></div>
+        <div class="card-body">
+          <div id="create-user-alert"></div>
+          <div class="form-row">
+            <div class="form-group"><label>ФИО *</label><input type="text" id="cu-fullname"></div>
+            <div class="form-group"><label>Логин *</label><input type="text" id="cu-username"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label>Пароль *</label><input type="text" id="cu-password"></div>
+            <div class="form-group">
+              <label>Роль *</label>
+              <select id="cu-role">
+                <option value="teacher">Педагог</option>
+                <option value="admin">Администратор</option>
+                <option value="dev">Разработчик</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group"><label>Телефон</label><input type="text" id="cu-phone"></div>
+          <button class="btn btn-primary btn-lg mt-16" onclick="createUser()">Создать</button>
+        </div>
+      </div>
+
+      <div class="card mt-16" style="max-width:600px;">
+        <div class="card-header"><h2>Сбросить пароль</h2></div>
+        <div class="card-body">
+          <div id="reset-pwd-alert"></div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Пользователь *</label>
+              <select id="reset-user-select"><option value="">— выберите —</option></select>
+            </div>
+            <div class="form-group"><label>Новый пароль *</label><input type="text" id="reset-new-pwd"></div>
+          </div>
+          <button class="btn btn-warning mt-16" onclick="resetPassword()">Сбросить пароль</button>
+        </div>
+      </div>
+    </div>
+
   </div>
 
+  <!-- MODAL: deactivate -->
+  <div class="modal-overlay" id="modal-deactivate">
+    <div class="modal" style="max-width:400px;">
+      <div class="modal-header">
+        <h3>Деактивировать пользователя</h3>
+        <button class="modal-close" onclick="closeModal('modal-deactivate')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p>Деактивировать <strong id="deactivate-name"></strong>? Он не сможет войти.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('modal-deactivate')">Отмена</button>
+        <button class="btn btn-danger" onclick="confirmDeactivate()">Деактивировать</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
   <script>
-    // AUTH CHECK
     const user = API.getUser();
-    if (!user || user.role !== 'dev') {
-      window.location.href = '/login.html';
-    }
+    if (!user || user.role !== 'dev') window.location.href = '/login.html';
     document.getElementById('header-user-name').textContent = user.full_name;
 
-    async function loadDevUsers() {
-      try {
-        const users = await API.get('/dev/users');
-        const tbody = document.getElementById('dev-users-body');
-        tbody.innerHTML = users.map(u => `
-          <tr>
-            <td>${u.id}</td>
-            <td><strong>${u.role}</strong></td>
-            <td>${escHtml(u.full_name)}</td>
-            <td>${escHtml(u.username)}</td>
-            <td><code>${escHtml(u.plain_password) || '❌ Нет (только хэш)'}</code></td>
-            <td>${u.active ? '<span style="color:var(--success)">Активен</span>' : '<span style="color:var(--danger)">Удален</span>'}</td>
-          </tr>
-        `).join('');
-      } catch (e) {
-        alert(e.message);
-      }
+    function openModal(id) { document.getElementById(id).classList.add('show'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+    document.querySelectorAll('.modal-overlay').forEach(o => {
+      o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); });
+    });
+
+    function showTab(name, btn) {
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('tab-' + name).classList.add('active');
+      btn.classList.add('active');
+      if (name === 'users') loadUsers();
+      if (name === 'companies') loadCompanies();
+      if (name === 'schedule') loadSchedule();
+      if (name === 'subs') loadSubs();
+      if (name === 'create-user') loadUsersForSelect();
     }
 
-    loadDevUsers();
+    // STATS
+    async function loadStats() {
+      try {
+        const s = await API.get('/dev/stats');
+        const sm = {};
+        (s.lessons_by_status || []).forEach(x => { sm[x._id] = x.count; });
+        document.getElementById('db-stats').innerHTML = `
+          <div class="stat-box"><div class="val">${s.users}</div><div class="lbl">Пользователи</div></div>
+          <div class="stat-box"><div class="val">${s.companies}</div><div class="lbl">Компании</div></div>
+          <div class="stat-box"><div class="val">${s.schedule_slots}</div><div class="lbl">Слоты</div></div>
+          <div class="stat-box"><div class="val">${s.lessons}</div><div class="lbl">Занятий</div></div>
+          <div class="stat-box" style="background:#14532d;"><div class="val">${sm['completed']||0}</div><div class="lbl">Проведено</div></div>
+          <div class="stat-box" style="background:#7c2d12;"><div class="val">${sm['cancelled']||0}</div><div class="lbl">Отменено</div></div>
+          <div class="stat-box" style="background:#1e3a5f;"><div class="val">${sm['planned']||0}</div><div class="lbl">Запланировано</div></div>
+          <div class="stat-box" style="background:#4a1d96;"><div class="val">${s.substitutions}</div><div class="lbl">Замены</div></div>
+        `;
+      } catch (e) { console.error(e); }
+    }
+
+    // USERS
+    let usersData = [];
+    async function loadUsers() {
+      try {
+        usersData = await API.get('/dev/users');
+        const tbody = document.getElementById('users-body');
+        tbody.innerHTML = usersData.map(u => `
+          <tr style="${!u.active ? 'opacity:0.5;' : ''}">
+            <td><strong>${escHtml(u.full_name)}</strong></td>
+            <td><code>${escHtml(u.username)}</code></td>
+            <td><span class="pw-cell">${escHtml(u.plain_password)||'—'}</span></td>
+            <td>${roleBadge(u.role)}</td>
+            <td>${escHtml(u.phone)||'—'}</td>
+            <td>${u.active?'<span class="badge badge-success">Да</span>':'<span class="badge badge-danger">Нет</span>'}</td>
+            <td>${u.active?`<button class="danger-btn" onclick="deactivateUser('${u.id}','${escAttr(u.full_name)}')">Деактив.</button>`:'—'}</td>
+          </tr>`).join('') || '<tr><td colspan="7" class="empty-state">Нет данных</td></tr>';
+      } catch (e) { console.error(e); }
+    }
+
+    function roleBadge(r) {
+      const m = { admin:'<span class="badge badge-info">Админ</span>', teacher:'<span class="badge badge-success">Педагог</span>', dev:'<span class="badge" style="background:#7c3aed;color:#fff;">Dev</span>' };
+      return m[r] || r;
+    }
+
+    let deactivateId = null;
+    function deactivateUser(id, name) { deactivateId = id; document.getElementById('deactivate-name').textContent = name; openModal('modal-deactivate'); }
+    async function confirmDeactivate() {
+      if (!deactivateId) return;
+      try { await API.delete(`/dev/users/${deactivateId}`); closeModal('modal-deactivate'); loadUsers(); loadStats(); }
+      catch (e) { alert(e.message); }
+    }
+
+    // COMPANIES
+    async function loadCompanies() {
+      try {
+        const companies = await API.get('/dev/companies');
+        document.getElementById('companies-body').innerHTML = companies.map(c => `
+          <tr style="${!c.active?'opacity:0.5;':''}">
+            <td><strong>${escHtml(c.name)}</strong></td>
+            <td>${companyTypeBadge(c.type)}</td>
+            <td>${escHtml(c.address)||'—'}</td>
+            <td>${escHtml(c.contact_person)||'—'}</td>
+            <td>${escHtml(c.phone)||'—'}</td>
+            <td>${c.active?'✓':'✗'}</td>
+          </tr>`).join('') || '<tr><td colspan="6" class="empty-state">Нет данных</td></tr>';
+      } catch (e) { console.error(e); }
+    }
+
+    // SCHEDULE
+    async function loadSchedule() {
+      try {
+        const slots = await API.get('/dev/schedule');
+        document.getElementById('schedule-body').innerHTML = slots.map(s => `
+          <tr style="${!s.active?'opacity:0.5;':''}">
+            <td>${escHtml(s.teacher_name)} <code style="font-size:11px;color:#94a3b8;">${escHtml(s.teacher_username)}</code></td>
+            <td>${escHtml(s.company_name)}</td>
+            <td>${companyTypeBadge(s.company_type)}</td>
+            <td>${DAYS_RU[s.day_of_week]}</td>
+            <td>${s.time_start}–${s.time_end}</td>
+            <td>${escHtml(s.group_name)||'—'}</td>
+            <td>${s.active?'✓':'✗'}</td>
+          </tr>`).join('') || '<tr><td colspan="7" class="empty-state">Нет данных</td></tr>';
+      } catch (e) { console.error(e); }
+    }
+
+    // LESSONS
+    async function loadLessons() {
+      try {
+        const from = document.getElementById('lessons-from').value;
+        const to = document.getElementById('lessons-to').value;
+        const status = document.getElementById('lessons-status').value;
+        let q = '/dev/lessons?';
+        if (from) q += `date_from=${from}&`;
+        if (to) q += `date_to=${to}&`;
+        if (status) q += `status=${status}&`;
+        const lessons = await API.get(q);
+        document.getElementById('lessons-count').textContent = `(${lessons.length})`;
+        const tbody = document.getElementById('lessons-body');
+        tbody.innerHTML = lessons.map(l => `
+          <tr>
+            <td>${formatDate(l.date)}</td>
+            <td>${l.time_start}–${l.time_end}</td>
+            <td>${escHtml(l.company_name)}</td>
+            <td>${companyTypeBadge(l.company_type)}</td>
+            <td><strong>${escHtml(l.actual_teacher)}</strong></td>
+            <td>${escHtml(l.original_teacher)}</td>
+            <td>${escHtml(l.group_name)||'—'}</td>
+            <td>${statusBadge(l.status)}</td>
+            <td>${l.company_type==='kindergarten'?l.children_count:'—'}</td>
+            <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(l.notes)||'—'}</td>
+          </tr>`).join('') || '<tr><td colspan="10" class="empty-state">Нет данных</td></tr>';
+      } catch (e) { console.error(e); }
+    }
+
+    // SUBSTITUTIONS
+    async function loadSubs() {
+      try {
+        const subs = await API.get('/dev/substitutions');
+        document.getElementById('subs-body').innerHTML = subs.map(s => `
+          <tr>
+            <td>${formatDate(s.lesson_date)}</td>
+            <td>${escHtml(s.original_teacher)}</td>
+            <td><strong>${escHtml(s.substitute_teacher)}</strong></td>
+            <td>${escHtml(s.reason)||'—'}</td>
+            <td style="font-size:12px;color:#64748b;">${s.created_at?new Date(s.created_at).toLocaleString('ru-RU'):'—'}</td>
+          </tr>`).join('') || '<tr><td colspan="5" class="empty-state">Нет замен</td></tr>';
+      } catch (e) { console.error(e); }
+    }
+
+    // CREATE USER
+    async function createUser() {
+      const full_name = document.getElementById('cu-fullname').value.trim();
+      const username = document.getElementById('cu-username').value.trim();
+      const password = document.getElementById('cu-password').value.trim();
+      const role = document.getElementById('cu-role').value;
+      const phone = document.getElementById('cu-phone').value.trim();
+      const alertDiv = document.getElementById('create-user-alert');
+      alertDiv.innerHTML = '';
+      if (!full_name || !username || !password) {
+        alertDiv.innerHTML = '<div class="alert alert-danger">Заполните все обязательные поля</div>'; return;
+      }
+      try {
+        await API.post('/dev/users', { full_name, username, password, role, phone });
+        alertDiv.innerHTML = '<div class="alert alert-success">Пользователь создан!</div>';
+        document.getElementById('cu-fullname').value = '';
+        document.getElementById('cu-username').value = '';
+        document.getElementById('cu-password').value = '';
+        document.getElementById('cu-phone').value = '';
+        loadStats(); loadUsersForSelect();
+      } catch (e) { alertDiv.innerHTML = `<div class="alert alert-danger">${e.message}</div>`; }
+    }
+
+    async function loadUsersForSelect() {
+      try {
+        const users = await API.get('/dev/users');
+        const sel = document.getElementById('reset-user-select');
+        sel.innerHTML = '<option value="">— выберите —</option>';
+        users.forEach(u => { sel.innerHTML += `<option value="${u.id}">${escHtml(u.full_name)} (${escHtml(u.username)})</option>`; });
+      } catch (e) { console.error(e); }
+    }
+
+    async function resetPassword() {
+      const userId = document.getElementById('reset-user-select').value;
+      const password = document.getElementById('reset-new-pwd').value.trim();
+      const alertDiv = document.getElementById('reset-pwd-alert');
+      alertDiv.innerHTML = '';
+      if (!userId || !password) {
+        alertDiv.innerHTML = '<div class="alert alert-danger">Выберите пользователя и введите пароль</div>'; return;
+      }
+      try {
+        await API.put(`/dev/users/${userId}/reset-password`, { password });
+        alertDiv.innerHTML = '<div class="alert alert-success">Пароль сброшен!</div>';
+        document.getElementById('reset-new-pwd').value = '';
+        loadUsers();
+      } catch (e) { alertDiv.innerHTML = `<div class="alert alert-danger">${e.message}</div>`; }
+    }
+
+    (function init() {
+      const month = getCurrentMonthRange();
+      document.getElementById('lessons-from').value = month.from;
+      document.getElementById('lessons-to').value = month.to;
+      loadStats();
+      loadUsers();
+    })();
   </script>
 </body>
 </html>

@@ -1,222 +1,210 @@
 const express = require('express');
-const { getDb } = require('../database/connection');
-const { authMiddleware, adminOnly } = require('../middleware/auth');
+const Lesson = require('../models/Lesson');
+const Substitution = require('../models/Substitution');
+const User = require('../models/User');
+const { authMiddleware } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authMiddleware);
 
+function formatLesson(l) {
+  const slot = l.schedule_slot_id;
+  const company = slot.company_id;
+  const originalTeacher = slot.teacher_id;
+  const actualTeacher = l.actual_teacher_id;
+
+  return {
+    id: l._id.toString(),
+    date: l.date,
+    status: l.status,
+    children_count: l.children_count,
+    price: l.price,
+    notes: l.notes,
+    created_at: l.created_at,
+    updated_at: l.updated_at,
+    schedule_slot_id: slot._id.toString(),
+    day_of_week: slot.day_of_week,
+    time_start: slot.time_start,
+    time_end: slot.time_end,
+    group_name: slot.group_name,
+    original_teacher_id: originalTeacher._id.toString(),
+    original_teacher_name: originalTeacher.full_name,
+    actual_teacher_id: actualTeacher._id.toString(),
+    actual_teacher_name: actualTeacher.full_name,
+    company_id: company._id.toString(),
+    company_name: company.name,
+    company_type: company.type
+  };
+}
+
+async function getLessonsPopulated(filter) {
+  return Lesson.find(filter)
+    .populate({
+      path: 'schedule_slot_id',
+      populate: [
+        { path: 'company_id', select: 'name type' },
+        { path: 'teacher_id', select: 'full_name' }
+      ]
+    })
+    .populate('actual_teacher_id', 'full_name')
+    .sort({ date: -1, 'schedule_slot_id.time_start': 1 });
+}
+
 // GET /api/lessons
-router.get('/', (req, res) => {
-  const db = getDb();
+router.get('/', async (req, res) => {
   try {
     const { teacher_id, company_id, status, date_from, date_to, date } = req.query;
-    let sql = `
-      SELECT l.*,
-        ss.day_of_week, ss.time_start, ss.time_end, ss.group_name,
-        ss.teacher_id as original_teacher_id,
-        u.full_name as actual_teacher_name,
-        ou.full_name as original_teacher_name,
-        c.name as company_name, c.type as company_type, c.id as company_id
-      FROM lessons l
-      JOIN schedule_slots ss ON ss.id = l.schedule_slot_id
-      JOIN users u ON u.id = l.actual_teacher_id
-      JOIN users ou ON ou.id = ss.teacher_id
-      JOIN companies c ON c.id = ss.company_id
-      WHERE 1=1
-    `;
-    const params = [];
+    const filter = {};
 
-    // Teachers only see their own lessons
     if (req.user.role === 'teacher') {
-      sql += ' AND l.actual_teacher_id = ?';
-      params.push(req.user.id);
+      filter.actual_teacher_id = req.user.id;
     } else if (teacher_id) {
-      sql += ' AND (l.actual_teacher_id = ? OR ss.teacher_id = ?)';
-      params.push(teacher_id, teacher_id);
+      filter.actual_teacher_id = teacher_id;
     }
 
-    if (company_id) {
-      sql += ' AND ss.company_id = ?';
-      params.push(company_id);
-    }
-
-    if (status) {
-      sql += ' AND l.status = ?';
-      params.push(status);
-    }
+    if (status) filter.status = status;
 
     if (date) {
-      sql += ' AND l.date = ?';
-      params.push(date);
+      filter.date = date;
     } else {
-      if (date_from) {
-        sql += ' AND l.date >= ?';
-        params.push(date_from);
-      }
-      if (date_to) {
-        sql += ' AND l.date <= ?';
-        params.push(date_to);
+      if (date_from || date_to) {
+        filter.date = {};
+        if (date_from) filter.date.$gte = date_from;
+        if (date_to) filter.date.$lte = date_to;
       }
     }
 
-    sql += ' ORDER BY l.date DESC, ss.time_start';
-    const lessons = db.prepare(sql).all(...params);
-    res.json(lessons);
-  } finally {
-    db.close();
+    let lessons = await getLessonsPopulated(filter);
+
+    // Filter by company after populate (since company_id is inside schedule_slot)
+    if (company_id) {
+      lessons = lessons.filter(l =>
+        l.schedule_slot_id && l.schedule_slot_id.company_id &&
+        l.schedule_slot_id.company_id._id.toString() === company_id
+      );
+    }
+
+    res.json(lessons.filter(l => l.schedule_slot_id).map(formatLesson));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
 // PUT /api/lessons/:id
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   const { status, children_count, notes } = req.body;
-  const db = getDb();
   try {
-    const lesson = db.prepare('SELECT * FROM lessons WHERE id = ?').get(req.params.id);
-    if (!lesson) {
-      return res.status(404).json({ error: 'Занятие не найдено' });
-    }
+    const lesson = await Lesson.findById(req.params.id);
+    if (!lesson) return res.status(404).json({ error: 'Занятие не найдено' });
 
-    // Teachers can only update their own lessons
-    if (req.user.role === 'teacher' && lesson.actual_teacher_id !== req.user.id) {
+    if (req.user.role === 'teacher' && lesson.actual_teacher_id.toString() !== req.user.id) {
       return res.status(403).json({ error: 'Нет доступа к этому занятию' });
     }
 
-    db.prepare(`
-      UPDATE lessons SET
-        status = COALESCE(?, status),
-        children_count = COALESCE(?, children_count),
-        notes = COALESCE(?, notes),
-        updated_at = datetime('now')
-      WHERE id = ?
-    `).run(
-      status || null,
-      children_count !== undefined ? children_count : null,
-      notes !== undefined ? notes : null,
-      req.params.id
-    );
+    if (status !== undefined) lesson.status = status;
+    if (children_count !== undefined) lesson.children_count = children_count;
+    if (notes !== undefined) lesson.notes = notes;
+    lesson.updated_at = new Date();
+    await lesson.save();
 
-    const updated = db.prepare(`
-      SELECT l.*,
-        ss.day_of_week, ss.time_start, ss.time_end, ss.group_name,
-        ss.teacher_id as original_teacher_id,
-        u.full_name as actual_teacher_name,
-        c.name as company_name, c.type as company_type, c.id as company_id
-      FROM lessons l
-      JOIN schedule_slots ss ON ss.id = l.schedule_slot_id
-      JOIN users u ON u.id = l.actual_teacher_id
-      JOIN companies c ON c.id = ss.company_id
-      WHERE l.id = ?
-    `).get(req.params.id);
-
-    res.json(updated);
-  } finally {
-    db.close();
+    const populated = await getLessonsPopulated({ _id: lesson._id });
+    res.json(populated.length ? formatLesson(populated[0]) : { success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
 // PUT /api/lessons/:id/complete
-router.put('/:id/complete', (req, res) => {
+router.put('/:id/complete', async (req, res) => {
   const { children_count, notes, price } = req.body;
-  const db = getDb();
   try {
-    const lesson = db.prepare('SELECT * FROM lessons WHERE id = ?').get(req.params.id);
-    if (!lesson) {
-      return res.status(404).json({ error: 'Занятие не найдено' });
-    }
+    const lesson = await Lesson.findById(req.params.id)
+      .populate({ path: 'schedule_slot_id', populate: { path: 'company_id', select: 'type' } });
+    if (!lesson) return res.status(404).json({ error: 'Занятие не найдено' });
 
-    if (req.user.role === 'teacher' && lesson.actual_teacher_id !== req.user.id) {
+    if (req.user.role === 'teacher' && lesson.actual_teacher_id.toString() !== req.user.id) {
       return res.status(403).json({ error: 'Нет доступа к этому занятию' });
     }
 
-    if (children_count === undefined || children_count === null) {
-      return res.status(400).json({ error: 'Укажите количество детей' });
+    const companyType = lesson.schedule_slot_id?.company_id?.type;
+
+    // Садик: обязательно количество детей; школа: детей 0 по умолчанию
+    if (companyType === 'kindergarten') {
+      if (children_count === undefined || children_count === null || children_count === '') {
+        return res.status(400).json({ error: 'Укажите количество детей' });
+      }
     }
 
-    const finalPrice = (price !== undefined && price !== null && price !== '') ? price : null;
-
-    db.prepare(`
-      UPDATE lessons SET
-        status = 'completed',
-        children_count = ?,
-        price = ?,
-        notes = COALESCE(?, notes),
-        updated_at = datetime('now')
-      WHERE id = ?
-    `).run(children_count, finalPrice, notes || null, req.params.id);
+    lesson.status = 'completed';
+    lesson.children_count = (children_count !== undefined && children_count !== null && children_count !== '') ? Number(children_count) : 0;
+    lesson.price = (price !== undefined && price !== null && price !== '') ? Number(price) : null;
+    if (notes !== undefined) lesson.notes = notes;
+    lesson.updated_at = new Date();
+    await lesson.save();
 
     res.json({ success: true, message: 'Занятие отмечено как проведенное' });
-  } finally {
-    db.close();
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
 // PUT /api/lessons/:id/cancel
-router.put('/:id/cancel', (req, res) => {
+router.put('/:id/cancel', async (req, res) => {
   const { notes } = req.body;
-  const db = getDb();
   try {
-    const lesson = db.prepare('SELECT * FROM lessons WHERE id = ?').get(req.params.id);
-    if (!lesson) {
-      return res.status(404).json({ error: 'Занятие не найдено' });
-    }
+    const lesson = await Lesson.findById(req.params.id);
+    if (!lesson) return res.status(404).json({ error: 'Занятие не найдено' });
 
-    if (req.user.role === 'teacher' && lesson.actual_teacher_id !== req.user.id) {
+    if (req.user.role === 'teacher' && lesson.actual_teacher_id.toString() !== req.user.id) {
       return res.status(403).json({ error: 'Нет доступа к этому занятию' });
     }
 
-    db.prepare(`
-      UPDATE lessons SET
-        status = 'cancelled',
-        notes = COALESCE(?, notes),
-        updated_at = datetime('now')
-      WHERE id = ?
-    `).run(notes || null, req.params.id);
+    lesson.status = 'cancelled';
+    if (notes) lesson.notes = notes;
+    lesson.updated_at = new Date();
+    await lesson.save();
 
     res.json({ success: true, message: 'Занятие отменено' });
-  } finally {
-    db.close();
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
-// POST /api/lessons/:id/substitute  (admin only)
-router.post('/:id/substitute', adminOnly, (req, res) => {
+// POST /api/lessons/:id/substitute — admin или сам учитель (для своего занятия)
+router.post('/:id/substitute', async (req, res) => {
   const { substitute_teacher_id, reason } = req.body;
-
   if (!substitute_teacher_id) {
     return res.status(400).json({ error: 'Укажите заменяющего педагога' });
   }
 
-  const db = getDb();
   try {
-    const lesson = db.prepare('SELECT * FROM lessons WHERE id = ?').get(req.params.id);
-    if (!lesson) {
-      return res.status(404).json({ error: 'Занятие не найдено' });
+    const lesson = await Lesson.findById(req.params.id);
+    if (!lesson) return res.status(404).json({ error: 'Занятие не найдено' });
+
+    // Учитель может ставить замену только на своё занятие
+    if (req.user.role === 'teacher' && lesson.actual_teacher_id.toString() !== req.user.id) {
+      return res.status(403).json({ error: 'Нет доступа к этому занятию' });
     }
 
-    const substitute = db.prepare('SELECT id FROM users WHERE id = ? AND role = \'teacher\' AND active = 1').get(substitute_teacher_id);
-    if (!substitute) {
-      return res.status(400).json({ error: 'Заменяющий педагог не найден' });
-    }
+    const substitute = await User.findOne({ _id: substitute_teacher_id, role: 'teacher', active: true });
+    if (!substitute) return res.status(400).json({ error: 'Заменяющий педагог не найден' });
 
     const originalTeacherId = lesson.actual_teacher_id;
 
-    const transaction = db.transaction(() => {
-      // Update lesson's actual teacher
-      db.prepare('UPDATE lessons SET actual_teacher_id = ?, updated_at = datetime(\'now\') WHERE id = ?')
-        .run(substitute_teacher_id, req.params.id);
-
-      // Record substitution
-      db.prepare(`
-        INSERT INTO substitutions (lesson_id, original_teacher_id, substitute_teacher_id, reason)
-        VALUES (?, ?, ?, ?)
-      `).run(req.params.id, originalTeacherId, substitute_teacher_id, reason || '');
+    await Substitution.create({
+      lesson_id: lesson._id,
+      original_teacher_id: originalTeacherId,
+      substitute_teacher_id,
+      reason: reason || ''
     });
 
-    transaction();
+    lesson.actual_teacher_id = substitute_teacher_id;
+    lesson.updated_at = new Date();
+    await lesson.save();
+
     res.json({ success: true, message: 'Замена назначена' });
-  } finally {
-    db.close();
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
