@@ -56,7 +56,8 @@ async function getLessonsPopulated(filter) {
       ]
     })
     .populate('actual_teacher_id', 'full_name')
-    .sort({ date: -1, 'schedule_slot_id.time_start': 1 });
+    .sort({ date: -1 })
+    .lean();
 }
 
 // GET /api/lessons
@@ -66,7 +67,7 @@ router.get('/', async (req, res) => {
     const filter = {};
 
     if (req.user.role === 'teacher') {
-      filter.actual_teacher_id = req.user.id;
+      filter.actual_teacher_id = new mongoose.Types.ObjectId(req.user.id);
     } else if (teacher_id) {
       filter.actual_teacher_id = teacher_id;
     }
@@ -93,7 +94,15 @@ router.get('/', async (req, res) => {
       );
     }
 
-    res.json(lessons.filter(l => l.schedule_slot_id).map(formatLesson));
+    // JS sort: date desc, then time_start asc (can't sort populated fields at DB level)
+    lessons = lessons
+      .filter(l => l.schedule_slot_id)
+      .sort((a, b) => {
+        if (a.date !== b.date) return b.date.localeCompare(a.date);
+        return (a.schedule_slot_id.time_start || '').localeCompare(b.schedule_slot_id.time_start || '');
+      });
+
+    res.json(lessons.map(formatLesson));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

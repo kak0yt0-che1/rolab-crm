@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Lesson = require('../models/Lesson');
 const TeacherRate = require('../models/TeacherRate');
 const { authMiddleware } = require('../middleware/auth');
@@ -36,7 +37,7 @@ router.get('/calculate', async (req, res) => {
     };
 
     if (req.user.role === 'teacher') {
-      filter.actual_teacher_id = req.user.id;
+      filter.actual_teacher_id = new mongoose.Types.ObjectId(req.user.id);
     } else if (teacher_id) {
       filter.actual_teacher_id = teacher_id;
     }
@@ -49,7 +50,8 @@ router.get('/calculate', async (req, res) => {
         ]
       })
       .populate('actual_teacher_id', 'full_name')
-      .sort({ date: 1 });
+      .sort({ date: 1 })
+      .lean();
 
     // Фильтр по компании через populate
     if (company_id) {
@@ -62,10 +64,10 @@ router.get('/calculate', async (req, res) => {
     lessons = lessons.filter(l => l.schedule_slot_id && l.schedule_slot_id.company_id);
 
     // Загрузить все ставки учителей
-    const allRates = await TeacherRate.find({});
+    const allRates = await TeacherRate.find({}).lean();
     const rateMap = {};
     for (const r of allRates) {
-      rateMap[`${r.teacher_id}_${r.company_id}`] = r.rate;
+      rateMap[`${r.teacher_id.toString()}_${r.company_id.toString()}`] = r.rate;
     }
 
     const paymentDetails = [];

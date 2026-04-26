@@ -379,21 +379,16 @@
       } catch (e) { console.error(e); }
     }
 
-    let allLessonsCache = [];
-
     async function openLessonModal(id) {
       try {
-        if (!allLessonsCache.length) {
-          allLessonsCache = await API.get('/lessons?');
-        }
-        const l = allLessonsCache.find(x => x.id === id);
-        if (!l) {
-          // перезагружаем кэш
-          allLessonsCache = await API.get('/lessons?');
-          const l2 = allLessonsCache.find(x => x.id === id);
-          if (!l2) { alert('Занятие не найдено'); return; }
-          return openLessonModalWithData(l2);
-        }
+        const dateFrom = document.getElementById('lessons-date-from').value;
+        const dateTo = document.getElementById('lessons-date-to').value;
+        let q = '/lessons?';
+        if (dateFrom) q += `date_from=${dateFrom}&`;
+        if (dateTo) q += `date_to=${dateTo}&`;
+        const lessons = await API.get(q);
+        const l = lessons.find(x => x.id === id);
+        if (!l) { alert('Занятие не найдено'); return; }
         openLessonModalWithData(l);
       } catch (e) { alert(e.message); }
     }
@@ -448,7 +443,6 @@
       try {
         await API.put(`/lessons/${id}/complete`, { children_count, notes });
         closeModal('modal-lesson');
-        allLessonsCache = [];
         loadMyLessons();
       } catch (e) { alert(e.message); }
     }
@@ -460,7 +454,6 @@
       try {
         await API.put(`/lessons/${id}/cancel`, { notes });
         closeModal('modal-lesson');
-        allLessonsCache = [];
         loadMyLessons();
       } catch (e) { alert(e.message); }
     }
@@ -495,7 +488,6 @@
         await API.post(`/lessons/${id}/substitute`, { substitute_teacher_id, reason });
         closeModal('modal-sub');
         closeModal('modal-lesson');
-        allLessonsCache = [];
         loadMyLessons();
         alert('Замена назначена');
       } catch (e) { alert(e.message); }

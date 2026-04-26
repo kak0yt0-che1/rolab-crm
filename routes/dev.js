@@ -1,5 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const Company = require('../models/Company');
 const ScheduleSlot = require('../models/ScheduleSlot');
@@ -9,6 +10,14 @@ const { authMiddleware, devOnly } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authMiddleware, devOnly);
+
+function badId(res, id) {
+  if (!mongoose.isValidObjectId(id)) {
+    res.status(400).json({ error: 'Неверный идентификатор' });
+    return true;
+  }
+  return false;
+}
 
 // Все пользователи
 router.get('/users', async (req, res) => {
@@ -145,6 +154,7 @@ router.get('/stats', async (req, res) => {
 
 // Сбросить пароль пользователя
 router.put('/users/:id/reset-password', async (req, res) => {
+  if (badId(res, req.params.id)) return;
   const { password } = req.body;
   if (!password) return res.status(400).json({ error: 'Укажите новый пароль' });
   try {
@@ -169,6 +179,7 @@ router.post('/users', async (req, res) => {
 
 // Удалить/деактивировать пользователя
 router.delete('/users/:id', async (req, res) => {
+  if (badId(res, req.params.id)) return;
   try {
     await User.findByIdAndUpdate(req.params.id, { active: false });
     res.json({ success: true });

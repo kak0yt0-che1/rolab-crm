@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Lesson = require('../models/Lesson');
 const Substitution = require('../models/Substitution');
 const { authMiddleware } = require('../middleware/auth');
@@ -17,7 +18,7 @@ router.get('/summary', async (req, res) => {
     const filter = { date: { $gte: date_from, $lte: date_to } };
 
     if (req.user.role === 'teacher') {
-      filter.actual_teacher_id = req.user.id;
+      filter.actual_teacher_id = new mongoose.Types.ObjectId(req.user.id);
     } else if (teacher_id) {
       filter.actual_teacher_id = teacher_id;
     }
@@ -29,9 +30,10 @@ router.get('/summary', async (req, res) => {
           { path: 'company_id', select: 'name type' }
         ]
       })
-      .populate('actual_teacher_id', 'full_name');
+      .populate('actual_teacher_id', 'full_name')
+      .lean();
 
-    lessons = lessons.filter(l => l.schedule_slot_id && l.schedule_slot_id.company_id);
+    lessons = lessons.filter(l => l.actual_teacher_id && l.schedule_slot_id && l.schedule_slot_id.company_id);
 
     if (company_id) {
       lessons = lessons.filter(l =>
@@ -105,9 +107,10 @@ router.get('/substitutions', async (req, res) => {
 
     const subFilter = {};
     if (req.user.role === 'teacher') {
+      const uid = new mongoose.Types.ObjectId(req.user.id);
       subFilter.$or = [
-        { original_teacher_id: req.user.id },
-        { substitute_teacher_id: req.user.id }
+        { original_teacher_id: uid },
+        { substitute_teacher_id: uid }
       ];
     }
 
@@ -118,7 +121,8 @@ router.get('/substitutions', async (req, res) => {
       })
       .populate('original_teacher_id', 'full_name')
       .populate('substitute_teacher_id', 'full_name')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     // Фильтр по дате через занятие
     const filtered = subs.filter(s => {

@@ -42,7 +42,7 @@ router.get('/', async (req, res) => {
     const filter = { active: true };
 
     if (req.user.role === 'teacher') {
-      filter.teacher_id = req.user.id;
+      filter.teacher_id = new mongoose.Types.ObjectId(req.user.id);
     } else if (teacher_id) {
       filter.teacher_id = teacher_id;
     }
@@ -53,7 +53,8 @@ router.get('/', async (req, res) => {
     const slots = await ScheduleSlot.find(filter)
       .populate('teacher_id', 'full_name')
       .populate('company_id', 'name type')
-      .sort({ day_of_week: 1, time_start: 1 });
+      .sort({ day_of_week: 1, time_start: 1 })
+      .lean();
 
     res.json(slots.map(formatSlot));
   } catch (e) {

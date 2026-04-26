@@ -25,7 +25,9 @@ async function startServer() {
   app.use('/api/lessons', require('./routes/lessons'));
   app.use('/api/reports', require('./routes/reports'));
   app.use('/api/payments', require('./routes/payments'));
-  app.use('/api/dev', require('./routes/dev'));
+  if (process.env.NODE_ENV !== 'production') {
+    app.use('/api/dev', require('./routes/dev'));
+  }
 
   app.get(/(.*)/, (req, res) => {
     if (!req.path.startsWith('/api')) {
