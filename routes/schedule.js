@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const ScheduleSlot = require('../models/ScheduleSlot');
 const Lesson = require('../models/Lesson');
 const TeacherRate = require('../models/TeacherRate');
@@ -8,6 +9,14 @@ const { authMiddleware, adminOnly } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authMiddleware);
+
+function badId(res, id) {
+  if (!mongoose.isValidObjectId(id)) {
+    res.status(400).json({ error: 'Неверный идентификатор' });
+    return true;
+  }
+  return false;
+}
 
 function formatSlot(s) {
   return {
@@ -111,6 +120,7 @@ router.post('/', async (req, res) => {
 
 // PUT /api/schedule/:id — admin или учитель (только свой слот)
 router.put('/:id', async (req, res) => {
+  if (badId(res, req.params.id)) return;
   try {
     const slot = await ScheduleSlot.findById(req.params.id);
     if (!slot) return res.status(404).json({ error: 'Слот не найден' });
@@ -147,6 +157,7 @@ router.put('/:id', async (req, res) => {
 
 // DELETE /api/schedule/:id — admin или учитель (только свой слот)
 router.delete('/:id', async (req, res) => {
+  if (badId(res, req.params.id)) return;
   try {
     const slot = await ScheduleSlot.findById(req.params.id);
     if (!slot) return res.status(404).json({ error: 'Слот не найден' });

@@ -6,7 +6,7 @@
 // AUTH CHECK
 // ============================================================
 const user = API.getUser();
-if (!user || user.role !== 'admin') {
+if (!user || (user.role !== 'admin' && user.role !== 'dev')) {
   window.location.href = '/login.html';
 }
 document.getElementById('header-user-name').textContent = user.full_name;
@@ -26,7 +26,6 @@ function navigateTo(page) {
   if (section) section.classList.add('active');
   if (link) link.classList.add('active');
 
-  // Load data for the page
   switch (page) {
     case 'dashboard': loadDashboard(); break;
     case 'companies': loadCompanies(); break;
@@ -38,7 +37,6 @@ function navigateTo(page) {
   }
 }
 
-// Hash-based navigation
 document.querySelectorAll('.app-nav a').forEach(link => {
   link.addEventListener('click', (e) => {
     e.preventDefault();
@@ -64,12 +62,9 @@ function closeModal(id) {
   document.getElementById(id).classList.remove('show');
 }
 
-// Close modal on overlay click
 document.querySelectorAll('.modal-overlay').forEach(overlay => {
   overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) {
-      overlay.classList.remove('show');
-    }
+    if (e.target === overlay) overlay.classList.remove('show');
   });
 });
 
@@ -87,7 +82,6 @@ async function loadFilterOptions() {
     console.error(e);
   }
 
-  // Fill all teacher selects
   const teacherSelects = [
     'schedule-filter-teacher', 'lessons-filter-teacher',
     'reports-filter-teacher', 'payments-filter-teacher',
@@ -97,18 +91,17 @@ async function loadFilterOptions() {
     const el = document.getElementById(id);
     if (!el) return;
     const val = el.value;
-    const isFilter = id.includes('filter') || id.includes('substitute');
-    el.innerHTML = isFilter ? '<option value="">Все</option>' : '';
-    if (id === 'lesson-substitute-teacher') {
-      el.innerHTML = '<option value="">— Не менять —</option>';
-    }
+    const isFilter = id.includes('filter');
+    const isSub = id === 'lesson-substitute-teacher';
+    el.innerHTML = isFilter ? '<option value="">Все</option>'
+      : isSub ? '<option value="">— Не менять —</option>'
+      : '';
     allTeachers.forEach(t => {
       el.innerHTML += `<option value="${t.id}">${escHtml(t.full_name)}</option>`;
     });
     if (val) el.value = val;
   });
 
-  // Fill all company selects
   const companySelects = [
     'schedule-filter-company', 'lessons-filter-company',
     'reports-filter-company', 'slot-company'
@@ -142,7 +135,6 @@ async function loadDashboard() {
       API.get(`/reports/summary?date_from=${month.from}&date_to=${month.to}`)
     ]);
 
-    // Stats
     document.getElementById('dashboard-stats').innerHTML = `
       <div class="stat-card">
         <div class="stat-value">${companies.length}</div>
@@ -162,7 +154,6 @@ async function loadDashboard() {
       </div>
     `;
 
-    // Today's lessons
     const tbody = document.getElementById('dashboard-today-body');
     if (lessons.length === 0) {
       tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Нет занятий на сегодня</td></tr>';
@@ -211,8 +202,8 @@ async function loadCompanies() {
         <td>${escHtml(c.phone) || '—'}</td>
         <td>
           <div class="btn-group">
-            <button class="btn btn-sm btn-outline" onclick="editCompany(${c.id})">Изменить</button>
-            <button class="btn btn-sm btn-danger" onclick="deleteCompany(${c.id}, '${escAttr(c.name)}')">Удалить</button>
+            <button class="btn btn-sm btn-outline" onclick="editCompany('${c.id}')">Изменить</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteCompany('${c.id}', '${escAttr(c.name)}')">Удалить</button>
           </div>
         </td>
       </tr>
@@ -308,9 +299,9 @@ async function loadTeachers() {
           <td>${companiesList}</td>
           <td>
             <div class="btn-group">
-              <button class="btn btn-sm btn-outline" onclick="editTeacher(${t.id})">Изменить</button>
-              <button class="btn btn-sm btn-outline" onclick="openRatesModal(${t.id})">Ставки</button>
-              <button class="btn btn-sm btn-danger" onclick="deleteTeacher(${t.id}, '${escAttr(t.full_name)}')">Удалить</button>
+              <button class="btn btn-sm btn-outline" onclick="editTeacher('${t.id}')">Изменить</button>
+              <button class="btn btn-sm btn-outline" onclick="openRatesModal('${t.id}')">Ставки</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteTeacher('${t.id}', '${escAttr(t.full_name)}')">Удалить</button>
             </div>
           </td>
         </tr>
@@ -322,40 +313,30 @@ async function loadTeachers() {
 }
 
 function generateLoginFromFullName(fullName) {
-  // Only auto-generate if we are creating a new teacher
   if (document.getElementById('teacher-edit-id').value) return;
 
   const map = {
     'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e', 'ж': 'zh',
     'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
     'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'h', 'ц': 'ts',
-    'ч': 'ch', 'ш': 'sh', 'щ': 'shch', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu',
-    'я': 'ya'
+    'ч': 'ch', 'ш': 'sh', 'щ': 'shch', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya'
   };
 
   const str = fullName.trim().toLowerCase();
   const parts = str.split(/\s+/);
-  
-  if (!parts[0]) {
-    document.getElementById('teacher-username').value = '';
-    return;
-  }
-  
+  if (!parts[0]) { document.getElementById('teacher-username').value = ''; return; }
+
   let result = '';
-  // Convert last name
   for (let i = 0; i < parts[0].length; i++) {
     const char = parts[0][i];
     if (map[char] !== undefined) result += map[char];
     else if (/[a-z0-9]/.test(char)) result += char;
   }
-  
-  // Append first name initial
   if (parts.length > 1 && parts[1][0]) {
     const char = parts[1][0];
     if (map[char] !== undefined) result += '_' + map[char];
     else if (/[a-z0-9]/.test(char)) result += '_' + char;
   }
-  
   document.getElementById('teacher-username').value = result;
 }
 
@@ -371,12 +352,10 @@ function openTeacherModal(data) {
   const pwdInfo = document.getElementById('teacher-password-info');
 
   if (data) {
-    // Editing — show password field, hide auto-gen message
     document.getElementById('teacher-username').readOnly = true;
     pwdGroup.style.display = '';
     pwdInfo.style.display = 'none';
   } else {
-    // Creating — hide password field, show auto-gen message
     document.getElementById('teacher-username').readOnly = false;
     pwdGroup.style.display = 'none';
     pwdInfo.style.display = '';
@@ -405,12 +384,10 @@ async function saveTeacher() {
 
   try {
     if (id) {
-      // Update
       const updateData = { full_name: fullName, phone };
       if (password) updateData.password = password;
       await API.put(`/teachers/${id}`, updateData);
     } else {
-      // Create — password auto-generated on backend
       if (!username) { alert('Укажите логин'); return; }
       await API.post('/teachers', { username, full_name: fullName, phone });
     }
@@ -476,10 +453,10 @@ async function saveRates() {
   const rates = [];
 
   checks.forEach(cb => {
-    const companyId = cb.dataset.company;
+    const companyId = cb.dataset.company; // ✅ ObjectId string — без parseInt
     const rateInput = document.querySelector(`.rate-input[data-company="${companyId}"]`);
     const rate = rateInput ? parseInt(rateInput.value) || null : null;
-    rates.push({ company_id: parseInt(companyId), rate });
+    rates.push({ company_id: companyId, rate }); // ✅ строка ObjectId
   });
 
   try {
@@ -523,8 +500,8 @@ async function loadSchedule() {
         <td>${escHtml(s.group_name) || '—'}</td>
         <td>
           <div class="btn-group">
-            <button class="btn btn-sm btn-outline" onclick="editSlot(${s.id})">Изменить</button>
-            <button class="btn btn-sm btn-danger" onclick="deleteSlot(${s.id})">Удалить</button>
+            <button class="btn btn-sm btn-outline" onclick="editSlot('${s.id}')">Изменить</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteSlot('${s.id}')">Удалить</button>
           </div>
         </td>
       </tr>
@@ -553,7 +530,7 @@ function openSlotModal(data) {
 async function editSlot(id) {
   try {
     const slots = await API.get('/schedule');
-    const slot = slots.find(s => s.id === id);
+    const slot = slots.find(s => s.id === id); // ✅ сравнение строк
     if (slot) openSlotModal(slot);
   } catch (e) {
     alert(e.message);
@@ -563,9 +540,9 @@ async function editSlot(id) {
 async function saveSlot() {
   const id = document.getElementById('slot-edit-id').value;
   const data = {
-    teacher_id: parseInt(document.getElementById('slot-teacher').value),
-    company_id: parseInt(document.getElementById('slot-company').value),
-    day_of_week: parseInt(document.getElementById('slot-day').value),
+    teacher_id: document.getElementById('slot-teacher').value,   // ✅ строка ObjectId
+    company_id: document.getElementById('slot-company').value,   // ✅ строка ObjectId
+    day_of_week: parseInt(document.getElementById('slot-day').value), // ✅ число (1-7)
     time_start: document.getElementById('slot-time-start').value,
     time_end: document.getElementById('slot-time-end').value,
     group_name: document.getElementById('slot-group').value.trim()
@@ -610,10 +587,7 @@ async function generateLessons() {
   const date_from = document.getElementById('generate-from').value;
   const date_to = document.getElementById('generate-to').value;
 
-  if (!date_from || !date_to) {
-    alert('Укажите период');
-    return;
-  }
+  if (!date_from || !date_to) { alert('Укажите период'); return; }
 
   try {
     const result = await API.post('/schedule/generate', { date_from, date_to });
@@ -667,7 +641,7 @@ async function loadLessons() {
           <td>${statusBadge(l.status)}</td>
           <td>${l.status === 'completed' ? l.children_count : '—'}</td>
           <td>
-            <button class="btn btn-sm btn-outline" onclick="openLessonModal(${l.id})">Открыть</button>
+            <button class="btn btn-sm btn-outline" onclick="openLessonModal('${l.id}')">Открыть</button>
           </td>
         </tr>
       `;
@@ -679,8 +653,14 @@ async function loadLessons() {
 
 async function openLessonModal(id) {
   try {
-    const lessons = await API.get(`/lessons?`);
-    const l = lessons.find(x => x.id === id);
+    // Используем текущие фильтры чтобы не тянуть всё
+    const dateFrom = document.getElementById('lessons-date-from').value;
+    const dateTo = document.getElementById('lessons-date-to').value;
+    let q = '/lessons?';
+    if (dateFrom) q += `date_from=${dateFrom}&`;
+    if (dateTo) q += `date_to=${dateTo}&`;
+    const lessons = await API.get(q);
+    const l = lessons.find(x => x.id === id); // ✅ сравнение строк
     if (!l) { alert('Занятие не найдено'); return; }
 
     document.getElementById('lesson-edit-id').value = l.id;
@@ -732,9 +712,7 @@ async function completeLesson() {
 async function cancelLesson() {
   const id = document.getElementById('lesson-edit-id').value;
   const notes = document.getElementById('lesson-notes').value.trim();
-
   if (!confirm('Отменить занятие?')) return;
-
   try {
     await API.put(`/lessons/${id}/cancel`, { notes });
     closeModal('modal-lesson');
@@ -750,14 +728,11 @@ async function doSubstitute() {
   const substituteId = document.getElementById('lesson-substitute-teacher').value;
   const reason = document.getElementById('lesson-substitute-reason').value.trim();
 
-  if (!substituteId) {
-    alert('Выберите заменяющего педагога');
-    return;
-  }
+  if (!substituteId) { alert('Выберите заменяющего педагога'); return; }
 
   try {
     await API.post(`/lessons/${lessonId}/substitute`, {
-      substitute_teacher_id: parseInt(substituteId),
+      substitute_teacher_id: substituteId, // ✅ строка ObjectId
       reason
     });
     alert('Замена назначена');
@@ -777,10 +752,7 @@ async function loadReports() {
   const teacher = document.getElementById('reports-filter-teacher').value;
   const company = document.getElementById('reports-filter-company').value;
 
-  if (!dateFrom || !dateTo) {
-    alert('Укажите период');
-    return;
-  }
+  if (!dateFrom || !dateTo) { alert('Укажите период'); return; }
 
   try {
     let query = `/reports/summary?date_from=${dateFrom}&date_to=${dateTo}`;
@@ -788,9 +760,8 @@ async function loadReports() {
     if (company) query += `&company_id=${company}`;
 
     const report = await API.get(query);
-
-    // Totals
     const t = report.totals;
+
     document.getElementById('reports-totals').innerHTML = `
       <div class="stat-card">
         <div class="stat-value">${t.total_lessons || 0}</div>
@@ -810,9 +781,7 @@ async function loadReports() {
       </div>
     `;
 
-    // By teacher
-    const teacherBody = document.getElementById('reports-teachers-body');
-    teacherBody.innerHTML = report.byTeacher.map(r => `
+    document.getElementById('reports-teachers-body').innerHTML = report.byTeacher.map(r => `
       <tr>
         <td><strong>${escHtml(r.teacher_name)}</strong></td>
         <td>${r.total_lessons}</td>
@@ -823,9 +792,7 @@ async function loadReports() {
       </tr>
     `).join('') || '<tr><td colspan="6" class="empty-state">Нет данных</td></tr>';
 
-    // By company
-    const companyBody = document.getElementById('reports-companies-body');
-    companyBody.innerHTML = report.byCompany.map(r => `
+    document.getElementById('reports-companies-body').innerHTML = report.byCompany.map(r => `
       <tr>
         <td><strong>${escHtml(r.company_name)}</strong></td>
         <td>${companyTypeBadge(r.company_type)}</td>
@@ -836,11 +803,8 @@ async function loadReports() {
       </tr>
     `).join('') || '<tr><td colspan="6" class="empty-state">Нет данных</td></tr>';
 
-    // Substitutions
-    let subsQuery = `/reports/substitutions?date_from=${dateFrom}&date_to=${dateTo}`;
-    const subs = await API.get(subsQuery);
-    const subsBody = document.getElementById('reports-subs-body');
-    subsBody.innerHTML = subs.map(s => `
+    const subs = await API.get(`/reports/substitutions?date_from=${dateFrom}&date_to=${dateTo}`);
+    document.getElementById('reports-subs-body').innerHTML = subs.map(s => `
       <tr>
         <td>${formatDate(s.date)}</td>
         <td>${escHtml(s.company_name)}</td>
@@ -863,10 +827,7 @@ async function loadPayments() {
   const dateTo = document.getElementById('payments-date-to').value;
   const teacher = document.getElementById('payments-filter-teacher').value;
 
-  if (!dateFrom || !dateTo) {
-    alert('Укажите период');
-    return;
-  }
+  if (!dateFrom || !dateTo) { alert('Укажите период'); return; }
 
   try {
     let query = `/payments/calculate?date_from=${dateFrom}&date_to=${dateTo}`;
@@ -874,7 +835,6 @@ async function loadPayments() {
 
     const result = await API.get(query);
 
-    // Grand total
     document.getElementById('payments-totals').innerHTML = `
       <div class="stat-card">
         <div class="stat-value">${formatMoney(result.grand_total)}</div>
@@ -886,7 +846,6 @@ async function loadPayments() {
       </div>
     `;
 
-    // Summary by teacher
     document.getElementById('payments-summary-card').style.display = '';
     const summaryBody = document.getElementById('payments-summary-body');
     summaryBody.innerHTML = result.summary_by_teacher.map(t => `
@@ -898,7 +857,6 @@ async function loadPayments() {
       </tr>
     `).join('') || '<tr><td colspan="4" class="empty-state">Нет данных</td></tr>';
 
-    // Add totals row
     if (result.summary_by_teacher.length > 0) {
       summaryBody.innerHTML += `
         <tr style="background:#f0f9ff;font-weight:700;">
@@ -910,10 +868,8 @@ async function loadPayments() {
       `;
     }
 
-    // Details
     document.getElementById('payments-details-card').style.display = '';
-    const detailsBody = document.getElementById('payments-details-body');
-    detailsBody.innerHTML = result.details.map(d => `
+    document.getElementById('payments-details-body').innerHTML = result.details.map(d => `
       <tr>
         <td>${formatDate(d.date)}</td>
         <td>${escHtml(d.teacher_name)}</td>
@@ -933,7 +889,6 @@ async function loadPayments() {
 // INIT
 // ============================================================
 (function init() {
-  // Set default date ranges
   const week = getCurrentWeekRange();
   const month = getCurrentMonthRange();
 
@@ -944,7 +899,6 @@ async function loadPayments() {
   document.getElementById('payments-date-from').value = month.from;
   document.getElementById('payments-date-to').value = month.to;
 
-  // Navigate to initial page
   const hash = window.location.hash.replace('#', '') || 'dashboard';
   navigateTo(hash);
   loadFilterOptions();

@@ -1,9 +1,18 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Company = require('../models/Company');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authMiddleware);
+
+function badId(res, id) {
+  if (!mongoose.isValidObjectId(id)) {
+    res.status(400).json({ error: 'Неверный идентификатор' });
+    return true;
+  }
+  return false;
+}
 
 // GET — все пользователи могут читать список компаний (нужно учителям для расписания)
 router.get('/', async (req, res) => {
@@ -28,6 +37,7 @@ router.get('/', async (req, res) => {
 });
 
 router.get('/:id', async (req, res) => {
+  if (badId(res, req.params.id)) return;
   try {
     const company = await Company.findById(req.params.id);
     if (!company) return res.status(404).json({ error: 'Компания не найдена' });
@@ -52,6 +62,7 @@ router.post('/', adminOnly, async (req, res) => {
 });
 
 router.put('/:id', adminOnly, async (req, res) => {
+  if (badId(res, req.params.id)) return;
   const { name, type, address, contact_person, phone, active } = req.body;
   try {
     const update = {};
@@ -71,6 +82,7 @@ router.put('/:id', adminOnly, async (req, res) => {
 });
 
 router.delete('/:id', adminOnly, async (req, res) => {
+  if (badId(res, req.params.id)) return;
   try {
     await Company.findByIdAndUpdate(req.params.id, { active: false });
     res.json({ success: true });

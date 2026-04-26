@@ -1,4 +1,5 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const Lesson = require('../models/Lesson');
 const Substitution = require('../models/Substitution');
 const User = require('../models/User');
@@ -6,6 +7,14 @@ const { authMiddleware } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authMiddleware);
+
+function badId(res, id) {
+  if (!mongoose.isValidObjectId(id)) {
+    res.status(400).json({ error: 'Неверный идентификатор' });
+    return true;
+  }
+  return false;
+}
 
 function formatLesson(l) {
   const slot = l.schedule_slot_id;
@@ -92,6 +101,7 @@ router.get('/', async (req, res) => {
 
 // PUT /api/lessons/:id
 router.put('/:id', async (req, res) => {
+  if (badId(res, req.params.id)) return;
   const { status, children_count, notes } = req.body;
   try {
     const lesson = await Lesson.findById(req.params.id);
@@ -116,6 +126,7 @@ router.put('/:id', async (req, res) => {
 
 // PUT /api/lessons/:id/complete
 router.put('/:id/complete', async (req, res) => {
+  if (badId(res, req.params.id)) return;
   const { children_count, notes, price } = req.body;
   try {
     const lesson = await Lesson.findById(req.params.id)
@@ -150,6 +161,7 @@ router.put('/:id/complete', async (req, res) => {
 
 // PUT /api/lessons/:id/cancel
 router.put('/:id/cancel', async (req, res) => {
+  if (badId(res, req.params.id)) return;
   const { notes } = req.body;
   try {
     const lesson = await Lesson.findById(req.params.id);
@@ -172,6 +184,7 @@ router.put('/:id/cancel', async (req, res) => {
 
 // POST /api/lessons/:id/substitute — admin или сам учитель (для своего занятия)
 router.post('/:id/substitute', async (req, res) => {
+  if (badId(res, req.params.id)) return;
   const { substitute_teacher_id, reason } = req.body;
   if (!substitute_teacher_id) {
     return res.status(400).json({ error: 'Укажите заменяющего педагога' });

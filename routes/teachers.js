@@ -1,11 +1,20 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const TeacherRate = require('../models/TeacherRate');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authMiddleware);
+
+function badId(res, id) {
+  if (!mongoose.isValidObjectId(id)) {
+    res.status(400).json({ error: 'Неверный идентификатор' });
+    return true;
+  }
+  return false;
+}
 
 function generatePassword(length = 6) {
   const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
@@ -90,6 +99,7 @@ router.get('/me/companies', async (req, res) => {
 
 // GET /api/teachers/:id
 router.get('/:id', adminOnly, async (req, res) => {
+  if (badId(res, req.params.id)) return;
   try {
     const teacher = await User.findOne({ _id: req.params.id, role: 'teacher' });
     if (!teacher) return res.status(404).json({ error: 'Педагог не найден' });
@@ -155,6 +165,7 @@ router.post('/', adminOnly, async (req, res) => {
 
 // PUT /api/teachers/:id
 router.put('/:id', adminOnly, async (req, res) => {
+  if (badId(res, req.params.id)) return;
   const { full_name, phone, password, active } = req.body;
   try {
     const teacher = await User.findOne({ _id: req.params.id, role: 'teacher' });
@@ -186,6 +197,7 @@ router.put('/:id', adminOnly, async (req, res) => {
 
 // DELETE /api/teachers/:id
 router.delete('/:id', adminOnly, async (req, res) => {
+  if (badId(res, req.params.id)) return;
   try {
     await User.findOneAndUpdate({ _id: req.params.id, role: 'teacher' }, { active: false });
     res.json({ success: true });
@@ -196,6 +208,7 @@ router.delete('/:id', adminOnly, async (req, res) => {
 
 // GET /api/teachers/:id/rates
 router.get('/:id/rates', adminOnly, async (req, res) => {
+  if (badId(res, req.params.id)) return;
   try {
     const rates = await TeacherRate.find({ teacher_id: req.params.id }).populate('company_id');
     res.json(rates.map(r => ({
@@ -213,6 +226,7 @@ router.get('/:id/rates', adminOnly, async (req, res) => {
 
 // PUT /api/teachers/:id/rates — только админ может менять ставки
 router.put('/:id/rates', adminOnly, async (req, res) => {
+  if (badId(res, req.params.id)) return;
   const { rates } = req.body;
   if (!Array.isArray(rates)) return res.status(400).json({ error: 'rates должен быть массивом' });
 
