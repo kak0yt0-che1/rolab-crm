@@ -27,14 +27,16 @@ async function startServer() {
   app.use('/api/payments', require('./routes/payments'));
   app.use('/api/dev', require('./routes/dev'));
 
-  app.get('*', (req, res) => {
+  app.get(/(.*)/, (req, res) => {
     if (!req.path.startsWith('/api')) {
       const filePath = path.join(__dirname, 'public', req.path);
       if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
         return res.sendFile(filePath);
       }
-      res.sendFile(path.join(__dirname, 'public', 'login.html'));
+      return res.sendFile(path.join(__dirname, 'public', 'login.html'));
     }
+
+    return res.status(404).json({ error: 'Not found' });
   });
 
   app.use((err, req, res, next) => {
@@ -43,7 +45,7 @@ async function startServer() {
   });
 
   app.listen(PORT, () => {
-    console.log(`ROLAB система запущена: http://localhost:${PORT}`);
+    console.log(`ROLAB server started on port ${PORT}`);
     console.log(`Вход: admin1 / Admin@1234  или  admin2 / Rolab@5678`);
   });
 }
