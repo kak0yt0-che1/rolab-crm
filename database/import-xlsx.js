@@ -72,76 +72,124 @@ const TEACHERS = [
 ];
 
 // ─────────────────────────────────────────────────────────────────
+// Утилита: определить, является ли строка заголовком таблицы детей
+// ─────────────────────────────────────────────────────────────────
+function isHeaderRow(row) {
+  // Заголовок содержит «ФИО», «Ф.И.О», «Фио», «Имя» в одном из первых двух столбцов
+  for (let c = 0; c <= Math.min(1, row.length - 1); c++) {
+    const val = String(row[c]).trim().toLowerCase();
+    if (/^(ф\.?и\.?о|фио|имя)/.test(val)) return true;
+    if (val === '№' && row.length > 1) {
+      const next = String(row[1]).trim().toLowerCase();
+      if (/^(ф\.?и\.?о|фио|имя)/.test(next)) return true;
+    }
+  }
+  return false;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Утилита: является ли значение именем ребенка (а не мусором)
+// ─────────────────────────────────────────────────────────────────
+function isValidChildName(name) {
+  if (!name || name.length < 2) return false;
+  const lower = name.toLowerCase();
+  // Пропускаем заголовки и итоги
+  if (/^(ф\.?и\.?о|фио|№|всего|итого|имя)/i.test(name)) return false;
+  // Пропускаем ссылки
+  if (/^http/i.test(name)) return false;
+  // Пропускаем чистые числа (цена, дата)
+  if (/^\d+$/.test(name)) return false;
+  // Пропускаем время (10:00, 15.30-16.30 и тп)
+  if (/^[\d.:/-]+$/.test(name)) return false;
+  // Пропускаем телефоны
+  if (/^\+?\d[\d\s()-]{6,}/.test(name)) return false;
+  // Пропускаем метаинформацию
+  if (/^(моб|тел|контакт|адрес|ул\.|район|директор|воспит|группа|филиал|разница|пробн|понедельник|вторник|среда|четверг|пятница|суббота|воскресен)/i.test(name)) return false;
+  // Пропускаем известные не-имена (названия групп, компаний)
+  if (['наследники', 'морковки', 'байтерек тобы'].includes(lower)) return false;
+  return true;
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Утилита: извлечь имена детей из листа Excel
+// Стратегия: находим строку-заголовок (ФИО), берём детей ТОЛЬКО после неё
 // ─────────────────────────────────────────────────────────────────
 function extractChildren(wb, sheetName) {
   const ws = wb.Sheets[sheetName];
   if (!ws) return [];
 
   const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-  const children = [];
+  const allChildren = [];
   const seen = new Set();
+
+  let inChildrenBlock = false; // мы внутри блока с детьми (после заголовка)
+  let nameCol = 1;            // в каком столбце ФИО (обычно 1, в Лукоморья — 0)
 
   for (let i = 0; i < data.length; i++) {
     const row = data[i];
-    if (!row || row.length < 2) continue;
+    if (!row || row.length === 0) continue;
 
-    // Ищем строки, где первый столбец — номер или пусто, а второй — ФИО ребенка
-    const col0 = String(row[0]).trim();
-    const col1 = String(row[1]).trim();
-
-    // Пропускаем заголовки, «Всего», ссылки, номера телефонов
-    if (!col1) continue;
-    if (/^(Ф\.?И\.?О|ФИО|№|Всего|всего|Фио|итого)/i.test(col1)) continue;
-    if (/^http/i.test(col1)) continue;
-    if (/^(моб|тел|контакт|адрес|ул\.|район|директор)/i.test(col1)) continue;
-    if (/^\d{3,}$/.test(col1)) continue; // числа (цена)
-    if (/^[0-9.:-]+$/.test(col1)) continue; // время
-    if (/^\+?\d[\d\s-]{6,}/.test(col1)) continue; // телефон
-    if (col1.length < 2) continue;
-
-    // Фильтр: col0 должен быть числом (порядковый номер) или пусто (некоторые листы без номера)
-    const isNumbered = /^\d+$/.test(col0);
-    const isEmpty = col0 === '';
-
-    // Дополнительные фильтры — пропускаем известные не-имена
-    const lower = col1.toLowerCase();
-    if (['cosmo', 'interschool', 'наследники', 'байтерек тобы'].includes(lower)) continue;
-    if (lower.includes('робот') || lower.includes('табел') || lower.includes('воспит')) continue;
-    if (lower.includes('группа') || lower.includes('филиал')) continue;
-    if (lower.includes('пробн') && !isNumbered) continue;
-
-    // Для листа «Лукоморья» нет столбца с номером — имена в col0
-    if (sheetName === 'Лукоморья') {
-      const name = col0;
-      if (!name || /^(ФИО|Фио|№|Всего|http|тел|моб|\d)/i.test(name)) continue;
-      if (name.length < 2) continue;
-      const key = name.toLowerCase();
-      if (!seen.has(key)) {
-        seen.add(key);
-        children.push(name);
+    // Проверяем, является ли это строкой-заголовком
+    if (isHeaderRow(row)) {
+      inChildrenBlock = true;
+      // Определяем, в каком столбце имена
+      const col0 = String(row[0]).trim().toLowerCase();
+      if (/^(ф\.?и\.?о|фио|имя)/.test(col0)) {
+        nameCol = 0; // Лукоморья и подобные — имена в col0
+      } else {
+        nameCol = 1; // Стандартный формат — имена в col1
       }
       continue;
     }
 
-    if (!isNumbered && !isEmpty) continue;
-    // Если col0 пустой — дополнительно проверяем, что это не метаинформация
-    if (isEmpty) {
-      // Если все дальнейшие столбцы пусты — вероятно, что это имя добавленного ребенка
-      const hasData = row.slice(2).some(c => c !== '' && c !== 0);
-      // Но имена типа «Батыр», «Klass» — названия, пропускаем
-      if (['батыр', 'klass', 'padishah'].includes(lower)) continue;
-      if (lower.includes('школа') || lower.includes('лицей')) continue;
+    if (!inChildrenBlock) continue;
+
+    const col0 = String(row[0]).trim();
+    const colName = String(row[nameCol]).trim();
+
+    // Проверяем конец блока: «Всего», «итого», пустая строка с «Всего»
+    const colNameLower = colName.toLowerCase();
+    if (/^(всего|итого)/i.test(colName)) {
+      inChildrenBlock = false; // закончили текущий блок, ищем следующий заголовок
+      continue;
     }
 
-    const key = col1.toLowerCase();
+    // Если попали на строку-разделитель (полностью пустая), пропускаем, 
+    // но не выходим из блока — могут быть ещё дети с пустыми номерами
+    if (!col0 && !colName) continue;
+
+    // Если col0 — это дата/день недели (новый блок расписания), выходим
+    if (/^(понедельник|вторник|среда|четверг|пятница|суббота|воскресен)/i.test(col0)) {
+      inChildrenBlock = false;
+      continue;
+    }
+
+    // Имя ребенка
+    const name = colName;
+
+    // Если имя пустое — пропускаем (Academ kids: номера есть, имена пустые)
+    if (!name) continue;
+
+    // Проверяем валидность имени
+    if (!isValidChildName(name)) continue;
+
+    // col0 должен быть порядковым номером или пустым
+    const isNumbered = /^\d+$/.test(col0);
+    const isEmpty = col0 === '';
+    if (!isNumbered && !isEmpty) {
+      // Если col0 не пустой и не число, это может быть новый заголовок или мусор — выходим
+      inChildrenBlock = false;
+      continue;
+    }
+
+    const key = name.toLowerCase() + '___' + sheetName;
     if (!seen.has(key)) {
       seen.add(key);
-      children.push(col1);
+      allChildren.push(name);
     }
   }
 
-  return children;
+  return allChildren;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -156,6 +204,10 @@ async function importFromXlsx() {
   console.log('\n══════════════════════════════════════════');
   console.log('  📂 Импорт данных из Excel');
   console.log('══════════════════════════════════════════\n');
+
+  // ── 0. Очистка старых детей ──────────────────────────────────
+  const deletedChildren = await KindergartenChild.deleteMany({});
+  console.log(`🗑️  Удалено ${deletedChildren.deletedCount} старых записей детей\n`);
 
   // ── 1. Преподаватели ─────────────────────────────────────────
   console.log('👨‍🏫 Импорт преподавателей...');
@@ -215,33 +267,33 @@ async function importFromXlsx() {
   // ── 3. Дети ──────────────────────────────────────────────────
   console.log('👶 Импорт детей...');
   let childrenCreated = 0;
-  let childrenSkipped = 0;
 
   for (const c of COMPANY_SHEETS) {
     const companyId = companyMap[c.sheet];
     if (!companyId) continue;
 
     const names = extractChildren(wb, c.sheet);
-    if (names.length === 0) continue;
+    if (names.length === 0) {
+      console.log(`  ⚠️  ${c.name}: 0 детей (лист пустой или не удалось распознать)`);
+      continue;
+    }
 
     console.log(`  📋 ${c.name}: ${names.length} детей`);
+    for (const name of names) {
+      console.log(`     • ${name}`);
+    }
 
     for (const name of names) {
-      const exists = await KindergartenChild.findOne({ full_name: name, company_id: companyId });
-      if (!exists) {
-        await KindergartenChild.create({
-          full_name: name,
-          company_id: companyId,
-          status: 'regular',
-          active: true
-        });
-        childrenCreated++;
-      } else {
-        childrenSkipped++;
-      }
+      await KindergartenChild.create({
+        full_name: name,
+        company_id: companyId,
+        status: 'regular',
+        active: true
+      });
+      childrenCreated++;
     }
   }
-  console.log(`\n  📊 Создано: ${childrenCreated}, пропущено (уже есть): ${childrenSkipped}\n`);
+  console.log(`\n  📊 Всего создано детей: ${childrenCreated}\n`);
 
   // ── Итог ─────────────────────────────────────────────────────
   console.log('══════════════════════════════════════════');
