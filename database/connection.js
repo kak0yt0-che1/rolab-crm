@@ -8,7 +8,10 @@ async function connectDb() {
   const uri = process.env.MONGODB_URI;
   if (!uri) throw new Error('MONGODB_URI не задан в .env');
 
-  await mongoose.connect(uri);
+  await mongoose.connect(uri, {
+    serverSelectionTimeoutMS: 30000,
+    connectTimeoutMS: 30000
+  });
   connected = true;
   console.log('✅ MongoDB подключена');
 }

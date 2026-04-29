@@ -34,6 +34,7 @@ function navigateTo(page) {
     case 'lessons': loadLessons(); loadFilterOptions(); break;
     case 'reports': loadFilterOptions(); break;
     case 'payments': loadFilterOptions(); break;
+    case 'children': loadChildren(); loadKindergartenOptions(); break;
   }
 }
 
@@ -641,7 +642,10 @@ async function loadLessons() {
           <td>${statusBadge(l.status)}</td>
           <td>${l.status === 'completed' ? l.children_count : '—'}</td>
           <td>
-            <button class="btn btn-sm btn-outline" onclick="openLessonModal('${l.id}')">Открыть</button>
+            <div class="btn-group">
+              ${l.company_type === 'kindergarten' ? `<button class="btn btn-sm btn-success" onclick="openAttendanceModal('${l.id}')">✅ Список</button>` : ''}
+              <button class="btn btn-sm btn-outline" onclick="openLessonModal('${l.id}')">Открыть</button>
+            </div>
           </td>
         </tr>
       `;
@@ -678,6 +682,7 @@ async function openLessonModal(id) {
         <tr><td class="text-muted">Педагог:</td><td>${escHtml(l.actual_teacher_name)} ${isSubstituted ? '<span class="badge badge-warning">Замена</span>' : ''}</td></tr>
         <tr><td class="text-muted">Статус:</td><td>${statusBadge(l.status)}</td></tr>
       </table>
+      ${l.company_type === 'kindergarten' ? `<button class="btn btn-success mt-16" onclick="closeModal('modal-lesson'); openAttendanceModal('${l.id}');">✅ Отметка по списку</button>` : ''}
     `;
 
     await loadFilterOptions();
@@ -880,6 +885,357 @@ async function loadPayments() {
         <td class="text-bold">${formatMoney(d.payment)}</td>
       </tr>
     `).join('') || '<tr><td colspan="7" class="empty-state">Нет данных</td></tr>';
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+// ============================================================
+// CHILDREN (KINDERGARTEN)
+// ============================================================
+async function loadKindergartenOptions() {
+  try {
+    const companies = await API.get('/companies?type=kindergarten');
+    // Children filter
+    const filterSelect = document.getElementById('children-filter-company');
+    if (filterSelect) {
+      const val = filterSelect.value;
+      filterSelect.innerHTML = '<option value="">Все</option>';
+      companies.forEach(c => {
+        filterSelect.innerHTML += `<option value="${c.id}">${escHtml(c.name)}</option>`;
+      });
+      if (val) filterSelect.value = val;
+    }
+    // Child modal
+    const childSelect = document.getElementById('child-company');
+    if (childSelect) {
+      childSelect.innerHTML = '';
+      companies.forEach(c => {
+        childSelect.innerHTML += `<option value="${c.id}">${escHtml(c.name)}</option>`;
+      });
+    }
+    // Import modal
+    const importSelect = document.getElementById('import-target-company');
+    if (importSelect) {
+      importSelect.innerHTML = '';
+      companies.forEach(c => {
+        importSelect.innerHTML += `<option value="${c.id}">${escHtml(c.name)}</option>`;
+      });
+    }
+  } catch (e) {
+    console.error('loadKindergartenOptions error:', e);
+  }
+}
+
+async function loadChildren() {
+  try {
+    const company = document.getElementById('children-filter-company').value;
+    const status = document.getElementById('children-filter-status').value;
+    const search = document.getElementById('children-filter-search').value;
+
+    let query = '/children?';
+    if (company) query += `company_id=${company}&`;
+    if (status) query += `status=${status}&`;
+    if (search) query += `search=${encodeURIComponent(search)}&`;
+
+    const children = await API.get(query);
+    const tbody = document.getElementById('children-body');
+
+    if (children.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">Нет детей</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = children.map((c, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td><strong>${escHtml(c.full_name)}</strong></td>
+        <td>${escHtml(c.company_name)}</td>
+        <td>${childStatusBadge(c.status)}</td>
+        <td>
+          <div class="btn-group">
+            <button class="btn btn-sm btn-outline" onclick="editChild('${c.id}')">Изменить</button>
+            ${c.status === 'trial' ? `<button class="btn btn-sm btn-success" onclick="promoteChild('${c.id}', '${escAttr(c.full_name)}')">→ Регуляр</button>` : ''}
+            <button class="btn btn-sm btn-danger" onclick="deleteChild('${c.id}', '${escAttr(c.full_name)}')">Удалить</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    console.error('Children error:', e);
+  }
+}
+
+function childStatusBadge(status) {
+  if (status === 'regular') return '<span class="badge badge-success">Регуляр</span>';
+  if (status === 'trial') return '<span class="badge badge-warning">Пробный</span>';
+  return status;
+}
+
+function openChildModal(data) {
+  document.getElementById('child-edit-id').value = data ? data.id : '';
+  document.getElementById('child-fullname').value = data ? data.full_name : '';
+  document.getElementById('child-status').value = data ? data.status : 'trial';
+  document.getElementById('modal-child-title').textContent = data ? 'Редактировать ребёнка' : 'Новый ребёнок';
+
+  loadKindergartenOptions().then(() => {
+    if (data && data.company_id) {
+      document.getElementById('child-company').value = data.company_id;
+    }
+  });
+
+  openModal('modal-child');
+}
+
+async function editChild(id) {
+  try {
+    const c = await API.get(`/children/${id}`);
+    openChildModal(c);
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function saveChild() {
+  const id = document.getElementById('child-edit-id').value;
+  const data = {
+    full_name: document.getElementById('child-fullname').value.trim(),
+    company_id: document.getElementById('child-company').value,
+    status: document.getElementById('child-status').value
+  };
+
+  if (!data.full_name) { alert('Укажите ФИО'); return; }
+  if (!data.company_id) { alert('Выберите садик'); return; }
+
+  try {
+    if (id) {
+      await API.put(`/children/${id}`, data);
+    } else {
+      await API.post('/children', data);
+    }
+    closeModal('modal-child');
+    loadChildren();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function promoteChild(id, name) {
+  if (!confirm(`Перевести «${name}» из пробного в регуляр?`)) return;
+  try {
+    await API.put(`/children/${id}/promote`);
+    loadChildren();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function deleteChild(id, name) {
+  if (!confirm(`Удалить ребёнка «${name}»?`)) return;
+  try {
+    await API.delete(`/children/${id}`);
+    loadChildren();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+// ============================================================
+// EXCEL IMPORT
+// ============================================================
+let importWorkbook = null;
+let importParsedSheets = {};
+
+function openImportChildrenModal() {
+  document.getElementById('import-excel-file').value = '';
+  document.getElementById('import-preview').style.display = 'none';
+  document.getElementById('btn-do-import').disabled = true;
+  importWorkbook = null;
+  importParsedSheets = {};
+  loadKindergartenOptions();
+  openModal('modal-import-children');
+}
+
+function parseExcelForImport(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      importWorkbook = XLSX.read(e.target.result, { type: 'array' });
+      importParsedSheets = {};
+
+      const sheetSelect = document.getElementById('import-sheet-select');
+      sheetSelect.innerHTML = '';
+      importWorkbook.SheetNames.forEach(name => {
+        sheetSelect.innerHTML += `<option value="${escHtml(name)}">${escHtml(name)}</option>`;
+        // Parse children from each sheet
+        importParsedSheets[name] = extractChildrenFromSheet(importWorkbook.Sheets[name]);
+      });
+
+      document.getElementById('import-preview').style.display = '';
+      document.getElementById('btn-do-import').disabled = false;
+      renderImportSheet();
+    } catch (err) {
+      alert('Ошибка чтения Excel: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function extractChildrenFromSheet(ws) {
+  const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+  const children = [];
+
+  for (let i = 0; i < data.length; i++) {
+    const row = data[i];
+    if (!row || row.length < 2) continue;
+
+    const firstCol = row[0];
+    const nameCol = row[1];
+    const thirdCol = row.length > 2 ? String(row[2] || '') : '';
+
+    // Row is a child if first column is a number (index) and second is a name string
+    if (typeof firstCol === 'number' && firstCol >= 1 && firstCol <= 100 &&
+        typeof nameCol === 'string' && nameCol.trim().length > 0) {
+
+      const name = nameCol.trim();
+
+      // Skip totals, headers
+      const lowerName = name.toLowerCase();
+      if (['итого', 'всего', 'ф.и.о', 'фио', 'всего:', 'итого:'].some(kw => lowerName.includes(kw))) continue;
+
+      // Detect trial status
+      let status = 'regular';
+      if (thirdCol) {
+        const lc = thirdCol.toLowerCase();
+        if (lc.includes('проб') || lc.includes('пр') || lc === '1пр') {
+          status = 'trial';
+        }
+      }
+
+      children.push({ full_name: name, status });
+    }
+  }
+
+  return children;
+}
+
+function renderImportSheet() {
+  const sheetName = document.getElementById('import-sheet-select').value;
+  const children = importParsedSheets[sheetName] || [];
+  const tbody = document.getElementById('import-children-body');
+
+  if (children.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Не найдено детей на этом листе</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = children.map((c, i) => `
+    <tr>
+      <td><input type="checkbox" class="import-child-check" data-index="${i}" checked></td>
+      <td>${escHtml(c.full_name)}</td>
+      <td>${childStatusBadge(c.status)}</td>
+    </tr>
+  `).join('');
+}
+
+function toggleImportAll(checked) {
+  document.querySelectorAll('.import-child-check').forEach(cb => cb.checked = checked);
+}
+
+async function doImportChildren() {
+  const sheetName = document.getElementById('import-sheet-select').value;
+  const companyId = document.getElementById('import-target-company').value;
+  const allChildren = importParsedSheets[sheetName] || [];
+
+  if (!companyId) { alert('Выберите садик'); return; }
+
+  const checks = document.querySelectorAll('.import-child-check:checked');
+  const selected = [];
+  checks.forEach(cb => {
+    const idx = parseInt(cb.dataset.index);
+    if (allChildren[idx]) {
+      selected.push({
+        full_name: allChildren[idx].full_name,
+        company_id: companyId,
+        status: allChildren[idx].status
+      });
+    }
+  });
+
+  if (selected.length === 0) { alert('Не выбрано ни одного ребёнка'); return; }
+
+  try {
+    const result = await API.post('/children/import', { children: selected });
+    alert(result.message);
+    closeModal('modal-import-children');
+    loadChildren();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+// ============================================================
+// ATTENDANCE (Checklist)
+// ============================================================
+async function openAttendanceModal(lessonId) {
+  try {
+    const data = await API.get(`/attendance/${lessonId}`);
+
+    document.getElementById('attendance-lesson-id').value = lessonId;
+    document.getElementById('attendance-info').innerHTML = `
+      <p class="text-muted">Садик: <strong>${escHtml(data.company_name)}</strong> | Всего детей: ${data.total}</p>
+    `;
+
+    const tbody = document.getElementById('attendance-body');
+    if (data.children.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Нет детей в списке. Добавьте детей в разделе «Дети (садики)»</td></tr>';
+    } else {
+      tbody.innerHTML = data.children.map(c => `
+        <tr>
+          <td>
+            <input type="checkbox" class="attendance-check" data-child="${c.child_id}" ${c.present ? 'checked' : ''}
+              onchange="updateAttendanceSummary()" style="width:20px;height:20px;cursor:pointer;">
+          </td>
+          <td>${escHtml(c.full_name)}</td>
+          <td>${childStatusBadge(c.status)}</td>
+        </tr>
+      `).join('');
+    }
+
+    updateAttendanceSummary();
+    openModal('modal-attendance');
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+function updateAttendanceSummary() {
+  const total = document.querySelectorAll('.attendance-check').length;
+  const present = document.querySelectorAll('.attendance-check:checked').length;
+  document.getElementById('attendance-summary').textContent = `Присутствует: ${present} из ${total}`;
+}
+
+async function saveAttendance() {
+  const lessonId = document.getElementById('attendance-lesson-id').value;
+  const checks = document.querySelectorAll('.attendance-check');
+  const marks = [];
+
+  checks.forEach(cb => {
+    marks.push({
+      child_id: cb.dataset.child,
+      present: cb.checked
+    });
+  });
+
+  try {
+    const result = await API.put(`/attendance/${lessonId}`, { marks });
+    alert(result.message);
+    closeModal('modal-attendance');
+    if (currentPage === 'lessons') loadLessons();
+    if (currentPage === 'dashboard') loadDashboard();
   } catch (e) {
     alert(e.message);
   }
