@@ -166,15 +166,21 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// POST /api/schedule/generate — только admin
-router.post('/generate', adminOnly, async (req, res) => {
+// POST /api/schedule/generate — admin (все слоты) или teacher (только свои)
+router.post('/generate', async (req, res) => {
   const { date_from, date_to } = req.body;
   if (!date_from || !date_to) {
     return res.status(400).json({ error: 'Укажите date_from и date_to (YYYY-MM-DD)' });
   }
 
   try {
-    const slots = await ScheduleSlot.find({ active: true });
+    // Учитель генерирует только свои слоты, админ — все
+    const slotFilter = { active: true };
+    if (req.user.role === 'teacher') {
+      slotFilter.teacher_id = new mongoose.Types.ObjectId(req.user.id);
+    }
+
+    const slots = await ScheduleSlot.find(slotFilter);
     const dayMap = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 0 }; // ISO → JS getDay()
 
     let created = 0;

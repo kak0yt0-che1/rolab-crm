@@ -68,7 +68,10 @@
     <div class="page-section" id="page-schedule">
       <div class="flex-between mb-16">
         <h1 class="section-title" style="margin-bottom:0;">Моё расписание</h1>
-        <button class="btn btn-primary" onclick="openSlotModal()">+ Добавить слот</button>
+        <div class="btn-group">
+          <button class="btn btn-success" onclick="openGenerateModal()">Сгенерировать занятия</button>
+          <button class="btn btn-primary" onclick="openSlotModal()">+ Добавить слот</button>
+        </div>
       </div>
       <div class="card">
         <div class="card-body no-pad">
@@ -279,6 +282,33 @@
         <button class="btn btn-outline" onclick="closeModal('modal-slot')">Отмена</button>
         <button class="btn btn-danger" id="btn-delete-slot" style="display:none;" onclick="deleteSlot()">Удалить</button>
         <button class="btn btn-primary" onclick="saveSlot()">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Generate Lessons -->
+  <div class="modal-overlay" id="modal-generate">
+    <div class="modal" style="max-width:480px;">
+      <div class="modal-header">
+        <h3>Генерация занятий</h3>
+        <button class="modal-close" onclick="closeModal('modal-generate')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted mb-16">Создать экземпляры занятий из вашего расписания за выбранный период. Существующие занятия не будут дублироваться.</p>
+        <div class="form-row">
+          <div class="form-group">
+            <label>С *</label>
+            <input type="date" id="generate-from">
+          </div>
+          <div class="form-group">
+            <label>По *</label>
+            <input type="date" id="generate-to">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('modal-generate')">Отмена</button>
+        <button class="btn btn-success" onclick="generateMyLessons()">Сгенерировать</button>
       </div>
     </div>
   </div>
@@ -635,6 +665,30 @@
         await API.delete(`/schedule/${id}`);
         closeModal('modal-slot');
         loadMySchedule();
+      } catch (e) { alert(e.message); }
+    }
+    // ============================================================
+    // GENERATE LESSONS
+    // ============================================================
+    function openGenerateModal() {
+      const week = getCurrentWeekRange();
+      document.getElementById('generate-from').value = week.from;
+      document.getElementById('generate-to').value = week.to;
+      openModal('modal-generate');
+    }
+
+    async function generateMyLessons() {
+      const date_from = document.getElementById('generate-from').value;
+      const date_to = document.getElementById('generate-to').value;
+      if (!date_from || !date_to) { alert('Укажите период'); return; }
+
+      try {
+        const result = await API.post('/schedule/generate', { date_from, date_to });
+        closeModal('modal-generate');
+        alert(result.message);
+        // Переходим на страницу занятий
+        window.location.hash = 'lessons';
+        navigateTo('lessons');
       } catch (e) { alert(e.message); }
     }
 
