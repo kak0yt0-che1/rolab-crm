@@ -594,7 +594,9 @@ async function generateLessons() {
     const result = await API.post('/schedule/generate', { date_from, date_to });
     closeModal('modal-generate');
     alert(result.message);
-    if (currentPage === 'lessons') loadLessons();
+    // Переходим на страницу занятий, чтобы список расписания сбросился
+    window.location.hash = 'lessons';
+    navigateTo('lessons');
   } catch (e) {
     alert(e.message);
   }
@@ -645,6 +647,7 @@ async function loadLessons() {
             <div class="btn-group">
               ${l.company_type === 'kindergarten' ? `<button class="btn btn-sm btn-success" onclick="openAttendanceModal('${l.id}')">✅ Список</button>` : ''}
               <button class="btn btn-sm btn-outline" onclick="openLessonModal('${l.id}')">Открыть</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteLesson('${l.id}')">Удалить</button>
             </div>
           </td>
         </tr>
@@ -743,6 +746,17 @@ async function doSubstitute() {
     alert('Замена назначена');
     closeModal('modal-lesson');
     loadLessons();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function deleteLesson(id) {
+  if (!confirm('Удалить это занятие? Это действие нельзя отменить.')) return;
+  try {
+    await API.delete(`/lessons/${id}`);
+    loadLessons();
+    if (currentPage === 'dashboard') loadDashboard();
   } catch (e) {
     alert(e.message);
   }

@@ -230,4 +230,27 @@ router.post('/:id/substitute', async (req, res) => {
   }
 });
 
+// DELETE /api/lessons/:id — только admin/dev
+router.delete('/:id', async (req, res) => {
+  if (badId(res, req.params.id)) return;
+  try {
+    if (req.user.role === 'teacher') {
+      return res.status(403).json({ error: 'Только администратор может удалять занятия' });
+    }
+
+    const lesson = await Lesson.findById(req.params.id);
+    if (!lesson) return res.status(404).json({ error: 'Занятие не найдено' });
+
+    // Удаляем связанные записи посещаемости и замены
+    const Attendance = require('../models/Attendance');
+    await Attendance.deleteMany({ lesson_id: lesson._id });
+    await Substitution.deleteMany({ lesson_id: lesson._id });
+    await Lesson.findByIdAndDelete(req.params.id);
+
+    res.json({ success: true, message: 'Занятие удалено' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;
