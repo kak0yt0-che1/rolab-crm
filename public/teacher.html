@@ -283,6 +283,39 @@
     </div>
   </div>
 
+  <!-- MODAL: Attendance checklist -->
+  <div class="modal-overlay" id="modal-attendance">
+    <div class="modal" style="width:600px;">
+      <div class="modal-header">
+        <h3>Отметка посещаемости</h3>
+        <button class="modal-close" onclick="closeModal('modal-attendance')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="attendance-lesson-id">
+        <div id="attendance-info" class="mb-16"></div>
+        <div class="card" style="max-height:400px;overflow-y:auto;">
+          <div class="card-body no-pad">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width:50px;">✓</th>
+                  <th>ФИО</th>
+                  <th>Статус</th>
+                </tr>
+              </thead>
+              <tbody id="attendance-body"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="mt-16" id="attendance-summary" style="font-weight:600;color:var(--primary);"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('modal-attendance')">Закрыть</button>
+        <button class="btn btn-success" onclick="saveAttendance()">Сохранить отметки ✓</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/js/api.js"></script>
   <script>
     // AUTH CHECK
@@ -373,7 +406,12 @@
               <td>${escHtml(l.group_name) || '—'}</td>
               <td>${statusBadge(l.status)}</td>
               <td>${l.status === 'completed' ? (l.company_type === 'kindergarten' ? l.children_count : '—') : '—'}</td>
-              <td>${actionBtn}</td>
+              <td>
+                <div class="btn-group">
+                  ${l.company_type === 'kindergarten' && l.status !== 'cancelled' ? `<button class="btn btn-sm btn-success" onclick="openAttendanceModal('${l.id}')">✅ Список</button>` : ''}
+                  ${actionBtn}
+                </div>
+              </td>
             </tr>`;
         }).join('');
       } catch (e) { console.error(e); }
@@ -523,16 +561,17 @@
     }
 
     async function openSlotModal(slotId) {
-      // Загрузить компании учителя
+      // Загрузить ВСЕ активные компании
       try {
-        myCompanies = await API.get('/teachers/me/companies');
+        const allCompanies = await API.get('/companies');
         const sel = document.getElementById('slot-company');
         sel.innerHTML = '<option value="">— выберите —</option>';
-        myCompanies.forEach(c => {
-          sel.innerHTML += `<option value="${c.id}">${escHtml(c.name)} (${c.type === 'kindergarten' ? 'Садик' : 'Школа'})</option>`;
+        allCompanies.forEach(c => {
+          const typeLabel = c.type === 'kindergarten' ? 'Садик' : 'Школа';
+          sel.innerHTML += `<option value="${c.id || c._id}">${escHtml(c.name)} (${typeLabel})</option>`;
         });
       } catch (e) {
-        alert('Не удалось загрузить компании. Обратитесь к администратору.');
+        alert('Не удалось загрузить компании: ' + e.message);
         return;
       }
 
@@ -669,6 +708,57 @@
       } catch (e) {
         alertDiv.innerHTML = `<div class="alert alert-danger">${e.message}</div>`;
       }
+    }
+
+    // ============================================================
+    // ATTENDANCE (children list for kindergartens)
+    // ============================================================
+    async function openAttendanceModal(lessonId) {
+      try {
+        const data = await API.get(`/attendance/${lessonId}`);
+        document.getElementById('attendance-lesson-id').value = lessonId;
+        document.getElementById('attendance-info').innerHTML = `
+          <strong>${escHtml(data.company_name)}</strong> — ${data.total} детей`;
+
+        const tbody = document.getElementById('attendance-body');
+        tbody.innerHTML = data.children.map(c => `
+          <tr>
+            <td><input type="checkbox" class="att-check" data-child="${c.child_id}" ${c.present ? 'checked' : ''}></td>
+            <td>${escHtml(c.full_name)}</td>
+            <td>${c.status === 'trial' ? '<span class="badge badge-warning">Пробный</span>' : '<span class="badge badge-success">Регуляр</span>'}</td>
+          </tr>`).join('');
+
+        updateAttendanceSummary();
+
+        // live counter
+        tbody.querySelectorAll('.att-check').forEach(cb => {
+          cb.addEventListener('change', updateAttendanceSummary);
+        });
+
+        openModal('modal-attendance');
+      } catch (e) { alert(e.message); }
+    }
+
+    function updateAttendanceSummary() {
+      const total = document.querySelectorAll('.att-check').length;
+      const checked = document.querySelectorAll('.att-check:checked').length;
+      document.getElementById('attendance-summary').textContent = `Присутствует: ${checked} из ${total}`;
+    }
+
+    async function saveAttendance() {
+      const lessonId = document.getElementById('attendance-lesson-id').value;
+      const checks = document.querySelectorAll('.att-check');
+      const marks = [];
+      checks.forEach(cb => {
+        marks.push({ child_id: cb.dataset.child, present: cb.checked });
+      });
+
+      try {
+        const result = await API.put(`/attendance/${lessonId}`, { marks });
+        alert(result.message);
+        closeModal('modal-attendance');
+        loadMyLessons();
+      } catch (e) { alert(e.message); }
     }
 
     // ============================================================

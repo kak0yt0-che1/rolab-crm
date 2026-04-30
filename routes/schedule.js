@@ -85,14 +85,6 @@ router.post('/', async (req, res) => {
     const teacher = await User.findOne({ _id: effectiveTeacherId, role: 'teacher', active: true });
     if (!teacher) return res.status(400).json({ error: 'Педагог не найден' });
 
-    // Учитель может добавлять слот только для компании, с которой он связан
-    if (req.user.role === 'teacher') {
-      const linked = await TeacherRate.findOne({ teacher_id: effectiveTeacherId, company_id });
-      if (!linked) {
-        return res.status(403).json({ error: 'Вы не привязаны к этой компании. Обратитесь к администратору.' });
-      }
-    }
-
     const company = await Company.findOne({ _id: company_id, active: true });
     if (!company) return res.status(400).json({ error: 'Компания не найдена' });
 
