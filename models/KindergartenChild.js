@@ -4,12 +4,15 @@ const schema = new mongoose.Schema({
   full_name: { type: String, required: true, trim: true },
   company_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
   status: { type: String, enum: ['regular', 'trial'], default: 'trial' },
+  schedule_time: { type: String, default: '', trim: true },
+  schedule_day: { type: String, default: '', trim: true },
   active: { type: Boolean, default: true },
   created_at: { type: Date, default: Date.now }
 });
 
 schema.index({ company_id: 1 });
 schema.index({ company_id: 1, full_name: 1 });
+schema.index({ company_id: 1, schedule_day: 1, schedule_time: 1 });
 
 schema.set('toJSON', {
   transform(doc, ret) {

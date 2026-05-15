@@ -245,9 +245,17 @@
         <input type="hidden" id="slot-edit-id">
         <div class="form-group">
           <label>Компания *</label>
-          <select id="slot-company">
+          <select id="slot-company" onchange="onSlotCompanyChange()">
             <option value="">— выберите —</option>
           </select>
+        </div>
+        <!-- Группы садика (появляется только для садиков) -->
+        <div class="form-group" id="slot-kg-group-wrap" style="display:none;">
+          <label>Группа садика (день + время) *</label>
+          <select id="slot-kg-group" onchange="onSlotKgGroupChange()">
+            <option value="">— выберите группу —</option>
+          </select>
+          <small class="text-muted" id="slot-kg-group-info"></small>
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -590,15 +598,17 @@
       } catch (e) { console.error(e); }
     }
 
+    let _slotCompanies = []; // cached companies with types
+
     async function openSlotModal(slotId) {
       // Загрузить ВСЕ активные компании
       try {
-        const allCompanies = await API.get('/companies');
+        _slotCompanies = await API.get('/companies');
         const sel = document.getElementById('slot-company');
         sel.innerHTML = '<option value="">— выберите —</option>';
-        allCompanies.forEach(c => {
+        _slotCompanies.forEach(c => {
           const typeLabel = c.type === 'kindergarten' ? 'Садик' : 'Школа';
-          sel.innerHTML += `<option value="${c.id || c._id}">${escHtml(c.name)} (${typeLabel})</option>`;
+          sel.innerHTML += `<option value="${c.id || c._id}" data-type="${c.type}">${escHtml(c.name)} (${typeLabel})</option>`;
         });
       } catch (e) {
         alert('Не удалось загрузить компании: ' + e.message);
@@ -613,6 +623,8 @@
       document.getElementById('slot-time-start').value = '';
       document.getElementById('slot-time-end').value = '';
       document.getElementById('slot-group').value = '';
+      document.getElementById('slot-kg-group-wrap').style.display = 'none';
+      document.getElementById('slot-kg-group-info').textContent = '';
 
       if (slotId) {
         document.getElementById('slot-modal-title').textContent = 'Редактировать слот';
@@ -627,11 +639,82 @@
             document.getElementById('slot-time-start').value = s.time_start;
             document.getElementById('slot-time-end').value = s.time_end;
             document.getElementById('slot-group').value = s.group_name || '';
+            // Загрузить группы если садик
+            await onSlotCompanyChange();
           }
         } catch (e) { console.error(e); }
       }
 
       openModal('modal-slot');
+    }
+
+    // При выборе компании — показать/скрыть группы садика
+    async function onSlotCompanyChange() {
+      const companyId = document.getElementById('slot-company').value;
+      const wrap = document.getElementById('slot-kg-group-wrap');
+      const info = document.getElementById('slot-kg-group-info');
+      const kgSel = document.getElementById('slot-kg-group');
+
+      if (!companyId) { wrap.style.display = 'none'; return; }
+
+      const company = _slotCompanies.find(c => (c.id || c._id) === companyId);
+      if (!company || company.type !== 'kindergarten') {
+        wrap.style.display = 'none';
+        return;
+      }
+
+      // Загрузить группы садика
+      try {
+        const groups = await API.get(`/children/groups/${companyId}`);
+        kgSel.innerHTML = '<option value="">— выберите группу —</option>';
+        if (groups.length === 0) {
+          info.textContent = 'Нет привязанных групп для этого садика';
+          wrap.style.display = '';
+          return;
+        }
+        const DAYS_SHORT_MAP = { 1: 'Пн', 2: 'Вт', 3: 'Ср', 4: 'Чт', 5: 'Пт', 6: 'Сб', 7: 'Вс' };
+        groups.forEach((g, i) => {
+          const dayShort = DAYS_SHORT_MAP[g.day_of_week] || g.schedule_day;
+          kgSel.innerHTML += `<option value="${i}" data-day="${g.day_of_week}" data-time="${g.schedule_time}">${dayShort}, ${g.schedule_time} — ${g.children_count} детей</option>`;
+        });
+        kgSel._groups = groups;
+        info.textContent = 'Выберите группу — день и время заполнятся автоматически';
+        wrap.style.display = '';
+      } catch (e) {
+        info.textContent = 'Ошибка загрузки групп: ' + e.message;
+        wrap.style.display = '';
+      }
+    }
+
+    // При выборе группы — заполнить день и время
+    function onSlotKgGroupChange() {
+      const kgSel = document.getElementById('slot-kg-group');
+      const idx = kgSel.value;
+      const info = document.getElementById('slot-kg-group-info');
+
+      if (idx === '' || !kgSel._groups) return;
+
+      const g = kgSel._groups[parseInt(idx)];
+      if (!g) return;
+
+      document.getElementById('slot-day').value = g.day_of_week;
+
+      // Конвертируем время: "9:00" → "09:00", "13:30" → "13:30"
+      const timeParts = g.schedule_time.split(':');
+      const hh = timeParts[0].padStart(2, '0');
+      const mm = (timeParts[1] || '00').padStart(2, '0');
+      const timeFormatted = `${hh}:${mm}`;
+      document.getElementById('slot-time-start').value = timeFormatted;
+
+      // Время конца = +1 час
+      const endH = (parseInt(hh) + 1) % 24;
+      document.getElementById('slot-time-end').value = `${String(endH).padStart(2, '0')}:${mm}`;
+
+      // Заполнить название группы
+      const DAYS_RU_SHORT = { 1: 'Пн', 2: 'Вт', 3: 'Ср', 4: 'Чт', 5: 'Пт', 6: 'Сб', 7: 'Вс' };
+      document.getElementById('slot-group').value = `${DAYS_RU_SHORT[g.day_of_week]} ${g.schedule_time}`;
+
+      info.innerHTML = `<strong>${g.children_count} детей:</strong> ${g.children.join(', ')}`;
     }
 
     async function saveSlot() {

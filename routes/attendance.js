@@ -8,6 +8,14 @@ const { authMiddleware } = require('../middleware/auth');
 const router = express.Router();
 router.use(authMiddleware);
 
+// Маппинг day_of_week (1-7) → название дня для фильтрации по группам
+const DAY_NAMES = ['', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
+
+/** Нормализует время из формата HTML input ("09:00") в формат CSV ("9:00") */
+function normalizeTime(time) {
+  return (time || '').replace(/^0(\d)/, '$1');
+}
+
 function badId(res, id) {
   if (!mongoose.isValidObjectId(id)) {
     res.status(400).json({ error: 'Неверный идентификатор' });
@@ -34,11 +42,16 @@ router.get('/:lessonId', async (req, res) => {
       return res.status(400).json({ error: 'Отметки по списку доступны только для садиков' });
     }
 
-    // Получаем всех активных детей этого садика
-    const children = await KindergartenChild.find({
-      company_id: company._id,
-      active: true
-    }).sort({ full_name: 1 });
+    const slot = lesson.schedule_slot_id;
+    const slotDay = DAY_NAMES[slot.day_of_week] || '';
+    const slotTime = normalizeTime(slot.time_start);
+
+    // Фильтруем детей по садику + день + время (группа по расписанию)
+    const childFilter = { company_id: company._id, active: true };
+    if (slotDay) childFilter.schedule_day = slotDay;
+    if (slotTime) childFilter.schedule_time = slotTime;
+
+    const children = await KindergartenChild.find(childFilter).sort({ full_name: 1 });
 
     // Получаем существующие отметки
     const marks = await Attendance.find({ lesson_id: req.params.lessonId });

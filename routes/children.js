@@ -54,6 +54,49 @@ router.get('/', async (req, res) => {
   }
 });
 
+// GET /api/children/groups/:companyId — группы (день+время) садика
+router.get('/groups/:companyId', async (req, res) => {
+  if (badId(res, req.params.companyId)) return;
+  try {
+    const groups = await KindergartenChild.aggregate([
+      {
+        $match: {
+          company_id: new mongoose.Types.ObjectId(req.params.companyId),
+          active: true,
+          schedule_day: { $ne: '' },
+          schedule_time: { $ne: '' }
+        }
+      },
+      {
+        $group: {
+          _id: { day: '$schedule_day', time: '$schedule_time' },
+          count: { $sum: 1 },
+          children: { $push: '$full_name' }
+        }
+      }
+    ]);
+
+    const DAY_ORDER = {
+      'Понедельник': 1, 'Вторник': 2, 'Среда': 3, 'Четверг': 4,
+      'Пятница': 5, 'Суббота': 6, 'Воскресенье': 7
+    };
+
+    const result = groups
+      .map(g => ({
+        schedule_day: g._id.day,
+        schedule_time: g._id.time,
+        day_of_week: DAY_ORDER[g._id.day] || 0,
+        children_count: g.count,
+        children: g.children
+      }))
+      .sort((a, b) => a.day_of_week - b.day_of_week || a.schedule_time.localeCompare(b.schedule_time));
+
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/children/:id
 router.get('/:id', async (req, res) => {
   if (badId(res, req.params.id)) return;
