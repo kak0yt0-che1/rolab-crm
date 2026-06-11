@@ -91,6 +91,7 @@ router.get('/:lessonId', async (req, res) => {
       lesson_id: req.params.lessonId,
       company_name: company.name,
       lesson_status: lesson.status,
+      notes: lesson.notes || '',
       children: result,
       available,
       total: result.length,
@@ -105,7 +106,7 @@ router.get('/:lessonId', async (req, res) => {
 router.put('/:lessonId', async (req, res) => {
   if (badId(res, req.params.lessonId)) return;
 
-  const { marks, complete } = req.body;
+  const { marks, complete, notes } = req.body;
   // marks: [{ child_id, present: true/false }] — это итоговый состав списка для занятия
   if (!marks || !Array.isArray(marks)) {
     return res.status(400).json({ error: 'Укажите массив отметок' });
@@ -153,6 +154,7 @@ router.put('/:lessonId', async (req, res) => {
     });
 
     lesson.children_count = presentCount;
+    if (notes !== undefined) lesson.notes = notes;
     if (complete) lesson.status = 'completed';
     lesson.updated_at = new Date();
     await lesson.save();
@@ -164,6 +166,66 @@ router.put('/:lessonId', async (req, res) => {
         : `Отмечено ${presentCount} из ${marks.length} детей`,
       present_count: presentCount,
       lesson_status: lesson.status
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/attendance/:lessonId/child — создать нового ребёнка и сразу добавить в список занятия.
+// Доступно учителю (своё занятие) и админу.
+router.post('/:lessonId/child', async (req, res) => {
+  if (badId(res, req.params.lessonId)) return;
+
+  const { full_name, status } = req.body;
+  if (!full_name || !full_name.trim()) {
+    return res.status(400).json({ error: 'Укажите ФИО ребёнка' });
+  }
+
+  try {
+    const lesson = await Lesson.findById(req.params.lessonId)
+      .populate({ path: 'schedule_slot_id', populate: { path: 'company_id', select: 'type' } });
+
+    if (!lesson) return res.status(404).json({ error: 'Занятие не найдено' });
+
+    const company = lesson.schedule_slot_id?.company_id;
+    if (!company || company.type !== 'kindergarten') {
+      return res.status(400).json({ error: 'Добавление детей доступно только для садиков' });
+    }
+
+    if (req.user.role === 'teacher' && lesson.actual_teacher_id.toString() !== req.user.id) {
+      return res.status(403).json({ error: 'Нет доступа к этому занятию' });
+    }
+
+    const name = full_name.trim();
+
+    // Не плодим дубли: если ребёнок с таким именем уже есть в садике — используем его
+    let child = await KindergartenChild.findOne({
+      company_id: company._id,
+      full_name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
+      active: true
+    });
+
+    if (!child) {
+      child = await KindergartenChild.create({
+        full_name: name,
+        company_id: company._id,
+        status: ['regular', 'trial'].includes(status) ? status : 'regular'
+      });
+    }
+
+    // Добавляем в список занятия (present = true по умолчанию)
+    await Attendance.findOneAndUpdate(
+      { lesson_id: req.params.lessonId, child_id: child._id },
+      { present: true },
+      { upsert: true, new: true }
+    );
+
+    res.status(201).json({
+      child_id: child._id.toString(),
+      full_name: child.full_name,
+      status: child.status,
+      present: true
     });
   } catch (e) {
     res.status(500).json({ error: e.message });

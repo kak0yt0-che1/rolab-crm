@@ -4,7 +4,9 @@ const Lesson = require('../models/Lesson');
 const Substitution = require('../models/Substitution');
 const Attendance = require('../models/Attendance');
 const KindergartenChild = require('../models/KindergartenChild');
-const { authMiddleware } = require('../middleware/auth');
+const Company = require('../models/Company');
+const { authMiddleware, adminOnly } = require('../middleware/auth');
+const { calculateClientPayment } = require('../utils/payment');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -235,6 +237,108 @@ router.get('/attendance', async (req, res) => {
       dates,
       children: rows
     });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/reports/export-data — данные для экспорта счёта клиенту (только админ).
+// Садик: дети × даты с посещаемостью. Школа: занятия × даты + кол-во.
+// Внизу — итоговая сумма к оплате клиентом. Ставка учителя НЕ включается.
+router.get('/export-data', adminOnly, async (req, res) => {
+  try {
+    const { date_from, date_to, company_id } = req.query;
+    if (!date_from || !date_to) {
+      return res.status(400).json({ error: 'Укажите date_from и date_to' });
+    }
+    if (!company_id || !mongoose.isValidObjectId(company_id)) {
+      return res.status(400).json({ error: 'Укажите компанию (company_id)' });
+    }
+
+    const company = await Company.findById(company_id);
+    if (!company) return res.status(404).json({ error: 'Компания не найдена' });
+
+    // Только проведённые занятия компании за период
+    let lessons = await Lesson.find({
+      status: 'completed',
+      date: { $gte: date_from, $lte: date_to }
+    })
+      .populate({ path: 'schedule_slot_id', populate: { path: 'company_id', select: 'name type client_rate' } })
+      .lean();
+
+    lessons = lessons.filter(l =>
+      l.schedule_slot_id &&
+      l.schedule_slot_id.company_id &&
+      l.schedule_slot_id.company_id._id.toString() === company_id
+    );
+
+    const clientRate = (company.client_rate === undefined) ? null : company.client_rate;
+
+    // Итоговая сумма к оплате клиентом
+    let clientTotal = 0;
+    for (const l of lessons) {
+      clientTotal += calculateClientPayment(company.type, l.children_count || 0, clientRate);
+    }
+
+    const dates = Array.from(new Set(lessons.map(l => l.date))).sort();
+
+    const base = {
+      company_id,
+      company_name: company.name,
+      company_type: company.type,
+      date_from,
+      date_to,
+      dates,
+      client_total: clientTotal
+    };
+
+    if (company.type === 'kindergarten') {
+      // Матрица дети × даты
+      const lessonIds = lessons.map(l => l._id);
+      const lessonDateMap = {};
+      lessons.forEach(l => { lessonDateMap[l._id.toString()] = l.date; });
+
+      const marks = await Attendance.find({ lesson_id: { $in: lessonIds } }).lean();
+      const childAttendance = {};
+      const childIds = new Set();
+      for (const m of marks) {
+        const cid = m.child_id.toString();
+        const date = lessonDateMap[m.lesson_id.toString()];
+        if (!date) continue;
+        childIds.add(cid);
+        if (!childAttendance[cid]) childAttendance[cid] = {};
+        childAttendance[cid][date] = childAttendance[cid][date] || !!m.present;
+      }
+
+      const children = await KindergartenChild.find({ _id: { $in: Array.from(childIds) } })
+        .sort({ full_name: 1 }).lean();
+
+      base.children = children.map(c => {
+        const cid = c._id.toString();
+        const att = childAttendance[cid] || {};
+        const totalPresent = dates.reduce((s, d) => s + (att[d] ? 1 : 0), 0);
+        return {
+          full_name: c.full_name,
+          status: c.status,
+          attendance: att,
+          total_present: totalPresent
+        };
+      });
+    } else {
+      // Школа: список занятий по датам (без поимённых детей)
+      base.lessons = lessons
+        .map(l => ({
+          date: l.date,
+          group_name: l.schedule_slot_id.group_name || '',
+          time_start: l.schedule_slot_id.time_start,
+          time_end: l.schedule_slot_id.time_end,
+          children_count: l.children_count || 0,
+          client_payment: calculateClientPayment(company.type, l.children_count || 0, clientRate)
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+    }
+
+    res.json(base);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

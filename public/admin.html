@@ -300,8 +300,9 @@
             <option value="">Все</option>
           </select>
         </div>
-        <div class="form-group" style="display:flex;align-items:flex-end;">
+        <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;">
           <button class="btn btn-primary" onclick="loadReports()">Показать</button>
+          <button class="btn btn-outline" onclick="exportClientTable()">📥 Экспорт счёта (Excel)</button>
         </div>
       </div>
 
@@ -895,17 +896,31 @@
         </div>
         <div class="form-row mt-16" style="align-items:flex-end;">
           <div class="form-group" style="flex:1;">
-            <label>Добавить ребёнка в список</label>
+            <label>Добавить из списка садика</label>
             <select id="attendance-add-select"><option value="">— выберите —</option></select>
           </div>
           <div class="form-group">
             <button class="btn btn-outline" onclick="addChildToAttendance()">+ Добавить</button>
           </div>
         </div>
+        <div class="form-row" style="align-items:flex-end;">
+          <div class="form-group" style="flex:1;">
+            <label>Новый ребёнок (ФИО)</label>
+            <input type="text" id="attendance-new-child" placeholder="Создать и добавить в список">
+          </div>
+          <div class="form-group">
+            <button class="btn btn-outline" onclick="createChildInAttendance()">+ Создать</button>
+          </div>
+        </div>
+        <div class="form-group mt-16">
+          <label>Заметки</label>
+          <textarea id="attendance-notes" placeholder="Комментарий к занятию..."></textarea>
+        </div>
         <div class="mt-16" id="attendance-summary" style="font-weight:600;color:var(--primary);"></div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-outline" onclick="closeModal('modal-attendance')">Закрыть</button>
+        <button class="btn btn-danger" onclick="cancelLessonFromAttendance()">Отменить занятие</button>
         <button class="btn btn-outline" onclick="saveAttendance(false)">Сохранить список</button>
         <button class="btn btn-success" onclick="saveAttendance(true)">Провести ✓</button>
       </div>

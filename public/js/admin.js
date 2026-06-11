@@ -914,6 +914,63 @@ async function loadAttendanceReport(dateFrom, dateTo, companyId, teacherId) {
   }
 }
 
+// Экспорт счёта клиенту в Excel (садик — дети×даты, школа — занятия×даты).
+// Ставка учителя в выгрузку не попадает.
+async function exportClientTable() {
+  const dateFrom = document.getElementById('reports-date-from').value;
+  const dateTo = document.getElementById('reports-date-to').value;
+  const companyId = document.getElementById('reports-filter-company').value;
+
+  if (!dateFrom || !dateTo) { alert('Укажите период'); return; }
+  if (!companyId) { alert('Выберите компанию в фильтре «Компания»'); return; }
+  if (typeof XLSX === 'undefined') { alert('Библиотека Excel не загрузилась'); return; }
+
+  try {
+    const data = await API.get(`/reports/export-data?company_id=${companyId}&date_from=${dateFrom}&date_to=${dateTo}`);
+    const shortDate = d => {
+      const dd = new Date(d + 'T00:00:00');
+      return dd.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+    };
+
+    const aoa = [];
+    aoa.push([`Компания: ${data.company_name}`]);
+    aoa.push([`Период: ${formatDate(data.date_from)} — ${formatDate(data.date_to)}`]);
+    aoa.push([]);
+
+    if (data.company_type === 'kindergarten') {
+      const header = ['№', 'ФИО', ...data.dates.map(shortDate), 'Посещений'];
+      aoa.push(header);
+      (data.children || []).forEach((c, i) => {
+        const row = [i + 1, c.full_name];
+        data.dates.forEach(d => {
+          const p = c.attendance[d];
+          row.push(p === true ? '+' : (p === false ? '−' : ''));
+        });
+        row.push(c.total_present);
+        aoa.push(row);
+      });
+      if (!data.children || !data.children.length) aoa.push(['', 'Нет данных за период']);
+    } else {
+      aoa.push(['Дата', 'Группа', 'Время', 'Детей', 'Сумма (₸)']);
+      (data.lessons || []).forEach(l => {
+        aoa.push([formatDate(l.date), l.group_name || '', formatTimeRange(l.time_start, l.time_end), l.children_count, l.client_payment]);
+      });
+      if (!data.lessons || !data.lessons.length) aoa.push(['Нет данных за период']);
+    }
+
+    aoa.push([]);
+    aoa.push(['', 'ИТОГО К ОПЛАТЕ КЛИЕНТОМ:', data.client_total + ' ₸']);
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Счёт');
+    const safeName = (data.company_name || 'export').replace(/[^\wа-яА-ЯёЁ\- ]/g, '').slice(0, 40);
+    XLSX.writeFile(wb, `Счёт_${safeName}_${data.date_from}_${data.date_to}.xlsx`);
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
 // ============================================================
 // PAYMENTS
 // ============================================================
@@ -1327,8 +1384,52 @@ async function openAttendanceModal(lessonId) {
     _attAvailable = data.available || [];
     renderAttendanceAddOptions();
 
+    const notesEl = document.getElementById('attendance-notes');
+    if (notesEl) notesEl.value = data.notes || '';
+    const newChildEl = document.getElementById('attendance-new-child');
+    if (newChildEl) newChildEl.value = '';
+
     updateAttendanceSummary();
     openModal('modal-attendance');
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+// Создать нового ребёнка и сразу добавить в список занятия
+async function createChildInAttendance() {
+  const input = document.getElementById('attendance-new-child');
+  const name = input.value.trim();
+  if (!name) { alert('Введите ФИО ребёнка'); return; }
+  const lessonId = document.getElementById('attendance-lesson-id').value;
+  try {
+    const child = await API.post(`/attendance/${lessonId}/child`, { full_name: name });
+    const tbody = document.getElementById('attendance-body');
+    const emptyRow = tbody.querySelector('.empty-state');
+    if (emptyRow) tbody.innerHTML = '';
+    // не дублируем, если вдруг уже в списке
+    if (!document.querySelector(`[data-row-child="${child.child_id}"]`)) {
+      tbody.insertAdjacentHTML('beforeend', attendanceRowHtml(child.child_id, child.full_name, child.status, true));
+    }
+    input.value = '';
+    // обновим пул доступных (новый ребёнок теперь существует в садике)
+    _attAvailable = _attAvailable.filter(c => c.child_id !== child.child_id);
+    renderAttendanceAddOptions();
+    updateAttendanceSummary();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function cancelLessonFromAttendance() {
+  const lessonId = document.getElementById('attendance-lesson-id').value;
+  const notes = document.getElementById('attendance-notes').value.trim();
+  if (!confirm('Отменить занятие?')) return;
+  try {
+    await API.put(`/lessons/${lessonId}/cancel`, { notes });
+    closeModal('modal-attendance');
+    if (currentPage === 'lessons') loadLessons();
+    if (currentPage === 'dashboard') loadDashboard();
   } catch (e) {
     alert(e.message);
   }
@@ -1414,8 +1515,11 @@ async function saveAttendance(complete) {
     });
   });
 
+  const notesEl = document.getElementById('attendance-notes');
+  const notes = notesEl ? notesEl.value.trim() : undefined;
+
   try {
-    const result = await API.put(`/attendance/${lessonId}`, { marks, complete: !!complete });
+    const result = await API.put(`/attendance/${lessonId}`, { marks, complete: !!complete, notes });
     alert(result.message);
     closeModal('modal-attendance');
     if (currentPage === 'lessons') loadLessons();
