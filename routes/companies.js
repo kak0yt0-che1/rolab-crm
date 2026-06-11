@@ -48,13 +48,16 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', adminOnly, async (req, res) => {
-  const { name, type, address, contact_person, phone } = req.body;
+  const { name, type, address, contact_person, phone, client_rate } = req.body;
   if (!name || !type) return res.status(400).json({ error: 'Укажите название и тип компании' });
   if (!['school', 'kindergarten'].includes(type)) {
     return res.status(400).json({ error: 'Тип: school или kindergarten' });
   }
   try {
-    const company = await Company.create({ name, type, address, contact_person, phone });
+    const company = await Company.create({
+      name, type, address, contact_person, phone,
+      client_rate: (client_rate === '' || client_rate === undefined || client_rate === null) ? null : Number(client_rate)
+    });
     res.status(201).json(company);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -63,7 +66,7 @@ router.post('/', adminOnly, async (req, res) => {
 
 router.put('/:id', adminOnly, async (req, res) => {
   if (badId(res, req.params.id)) return;
-  const { name, type, address, contact_person, phone, active } = req.body;
+  const { name, type, address, contact_person, phone, active, client_rate } = req.body;
   try {
     const update = {};
     if (name !== undefined) update.name = name;
@@ -72,6 +75,9 @@ router.put('/:id', adminOnly, async (req, res) => {
     if (contact_person !== undefined) update.contact_person = contact_person;
     if (phone !== undefined) update.phone = phone;
     if (active !== undefined) update.active = active;
+    if (client_rate !== undefined) {
+      update.client_rate = (client_rate === '' || client_rate === null) ? null : Number(client_rate);
+    }
 
     const company = await Company.findByIdAndUpdate(req.params.id, update, { new: true });
     if (!company) return res.status(404).json({ error: 'Компания не найдена' });

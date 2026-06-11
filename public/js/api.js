@@ -85,6 +85,21 @@ function formatMoney(amount) {
   return Number(amount).toLocaleString('ru-RU') + ' тг';
 }
 
+// Приводит время к 24-часовому формату "ЧЧ:ММ" ("9:0" → "09:00", "13:5" → "13:05")
+function formatTime(time) {
+  if (!time && time !== 0) return '—';
+  const parts = String(time).trim().split(':');
+  if (!parts[0]) return '—';
+  const hh = String(parseInt(parts[0], 10) || 0).padStart(2, '0');
+  const mm = String(parseInt(parts[1] || '0', 10) || 0).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+// Диапазон времени "ЧЧ:ММ–ЧЧ:ММ" в 24ч
+function formatTimeRange(start, end) {
+  return `${formatTime(start)}–${formatTime(end)}`;
+}
+
 function statusBadge(status) {
   const map = {
     planned: '<span class="badge badge-info">Запланировано</span>',

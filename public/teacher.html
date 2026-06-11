@@ -37,6 +37,12 @@
           <input type="date" id="lessons-date-to" onchange="loadMyLessons()">
         </div>
         <div class="form-group">
+          <label>Компания</label>
+          <select id="lessons-filter-company" onchange="loadMyLessons()">
+            <option value="">Все</option>
+          </select>
+        </div>
+        <div class="form-group">
           <label>Статус</label>
           <select id="lessons-filter-status" onchange="loadMyLessons()">
             <option value="">Все</option>
@@ -102,6 +108,12 @@
           <label>По</label>
           <input type="date" id="reports-date-to">
         </div>
+        <div class="form-group">
+          <label>Компания</label>
+          <select id="reports-filter-company">
+            <option value="">Все</option>
+          </select>
+        </div>
         <div class="form-group" style="display:flex;align-items:flex-end;">
           <button class="btn btn-primary" onclick="loadMyReports()">Показать</button>
         </div>
@@ -138,6 +150,18 @@
           <div class="flex-between">
             <span style="font-size:18px;font-weight:700;">Итого к оплате:</span>
             <span style="font-size:24px;font-weight:700;color:var(--primary);" id="reports-total-amount">0 тг</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt-16" id="reports-attendance-card">
+        <div class="card-header">
+          <h2>Посещаемость по датам</h2>
+          <small class="text-muted">Выберите садик в фильтре «Компания» сверху</small>
+        </div>
+        <div class="card-body no-pad">
+          <div class="table-wrap" id="reports-attendance-wrap">
+            <div class="empty-state" style="padding:20px;">Выберите садик в фильтре сверху</div>
           </div>
         </div>
       </div>
@@ -339,17 +363,28 @@
                   <th style="width:50px;">✓</th>
                   <th>ФИО</th>
                   <th>Статус</th>
+                  <th style="width:50px;"></th>
                 </tr>
               </thead>
               <tbody id="attendance-body"></tbody>
             </table>
           </div>
         </div>
+        <div class="form-row mt-16" style="align-items:flex-end;">
+          <div class="form-group" style="flex:1;">
+            <label>Добавить ребёнка в список</label>
+            <select id="attendance-add-select"><option value="">— выберите —</option></select>
+          </div>
+          <div class="form-group">
+            <button class="btn btn-outline" onclick="addChildToAttendance()">+ Добавить</button>
+          </div>
+        </div>
         <div class="mt-16" id="attendance-summary" style="font-weight:600;color:var(--primary);"></div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-outline" onclick="closeModal('modal-attendance')">Закрыть</button>
-        <button class="btn btn-success" onclick="saveAttendance()">Сохранить отметки ✓</button>
+        <button class="btn btn-outline" onclick="saveAttendance(false)">Сохранить список</button>
+        <button class="btn btn-success" onclick="saveAttendance(true)">Провести ✓</button>
       </div>
     </div>
   </div>
@@ -403,10 +438,12 @@
         const dateFrom = document.getElementById('lessons-date-from').value;
         const dateTo = document.getElementById('lessons-date-to').value;
         const status = document.getElementById('lessons-filter-status').value;
+        const company = document.getElementById('lessons-filter-company').value;
         let query = '/lessons?';
         if (dateFrom) query += `date_from=${dateFrom}&`;
         if (dateTo) query += `date_to=${dateTo}&`;
         if (status) query += `status=${status}&`;
+        if (company) query += `company_id=${company}&`;
 
         const lessons = await API.get(query);
         const tbody = document.getElementById('lessons-body');
@@ -431,14 +468,24 @@
           const d = new Date(l.date + 'T00:00:00');
           const jsDay = d.getDay();
           const dayName = DAYS_SHORT[jsDay === 0 ? 7 : jsDay];
-          const actionBtn = l.status === 'planned'
-            ? `<button class="btn btn-sm btn-success" onclick="openLessonModal('${l.id}')">Отметить</button>`
-            : `<button class="btn btn-sm btn-outline" onclick="openLessonModal('${l.id}')">Просмотр</button>`;
+          const isKg = l.company_type === 'kindergarten';
+          // Садик: основное действие — отметка по списку (она же проводит занятие)
+          let actions;
+          if (isKg && l.status !== 'cancelled') {
+            const mainLabel = l.status === 'planned' ? 'Отметить ✓' : 'Список';
+            const secLabel = l.status === 'planned' ? 'Замена/отмена' : 'Просмотр';
+            actions = `<button class="btn btn-sm btn-success" onclick="openAttendanceModal('${l.id}')">${mainLabel}</button>`
+              + `<button class="btn btn-sm btn-outline" onclick="openLessonModal('${l.id}')">${secLabel}</button>`;
+          } else {
+            actions = l.status === 'planned'
+              ? `<button class="btn btn-sm btn-success" onclick="openLessonModal('${l.id}')">Отметить</button>`
+              : `<button class="btn btn-sm btn-outline" onclick="openLessonModal('${l.id}')">Просмотр</button>`;
+          }
           return `
             <tr>
               <td>${formatDate(l.date)}</td>
               <td>${dayName}</td>
-              <td>${l.time_start}–${l.time_end}</td>
+              <td>${formatTimeRange(l.time_start, l.time_end)}</td>
               <td>${escHtml(l.company_name)}</td>
               <td>${companyTypeBadge(l.company_type)}</td>
               <td>${escHtml(l.group_name) || '—'}</td>
@@ -446,8 +493,7 @@
               <td>${l.status === 'completed' ? (l.company_type === 'kindergarten' ? l.children_count : '—') : '—'}</td>
               <td>
                 <div class="btn-group">
-                  ${l.company_type === 'kindergarten' && l.status !== 'cancelled' ? `<button class="btn btn-sm btn-success" onclick="openAttendanceModal('${l.id}')">✅ Список</button>` : ''}
-                  ${actionBtn}
+                  ${actions}
                 </div>
               </td>
             </tr>`;
@@ -491,7 +537,7 @@
       document.getElementById('lesson-info').innerHTML = `
         <table style="width:100%;">
           <tr><td class="text-muted" style="width:140px;">Дата:</td><td><strong>${formatDate(l.date)}</strong></td></tr>
-          <tr><td class="text-muted">Время:</td><td>${l.time_start}–${l.time_end}</td></tr>
+          <tr><td class="text-muted">Время:</td><td>${formatTimeRange(l.time_start, l.time_end)}</td></tr>
           <tr><td class="text-muted">Компания:</td><td>${escHtml(l.company_name)} ${companyTypeBadge(l.company_type)}</td></tr>
           <tr><td class="text-muted">Группа:</td><td>${escHtml(l.group_name) || '—'}</td></tr>
           <tr><td class="text-muted">Статус:</td><td>${statusBadge(l.status)}</td></tr>
@@ -587,7 +633,7 @@
         tbody.innerHTML = slots.map(s => `
           <tr>
             <td>${DAYS_RU[s.day_of_week]}</td>
-            <td>${s.time_start}–${s.time_end}</td>
+            <td>${formatTimeRange(s.time_start, s.time_end)}</td>
             <td>${escHtml(s.company_name)}</td>
             <td>${companyTypeBadge(s.company_type)}</td>
             <td>${escHtml(s.group_name) || '—'}</td>
@@ -781,10 +827,13 @@
     async function loadMyReports() {
       const dateFrom = document.getElementById('reports-date-from').value;
       const dateTo = document.getElementById('reports-date-to').value;
+      const company = document.getElementById('reports-filter-company').value;
       if (!dateFrom || !dateTo) { alert('Укажите период'); return; }
 
+      const companyQ = company ? `&company_id=${company}` : '';
+
       try {
-        const report = await API.get(`/reports/summary?date_from=${dateFrom}&date_to=${dateTo}`);
+        const report = await API.get(`/reports/summary?date_from=${dateFrom}&date_to=${dateTo}${companyQ}`);
         const t = report.totals;
         document.getElementById('reports-stats').innerHTML = `
           <div class="stat-card"><div class="stat-value">${t.total_lessons || 0}</div><div class="stat-label">Всего занятий</div></div>
@@ -804,7 +853,7 @@
             <td>${r.total_children}</td>
           </tr>`).join('') || '<tr><td colspan="6" class="empty-state">Нет данных</td></tr>';
 
-        const payments = await API.get(`/payments/calculate?date_from=${dateFrom}&date_to=${dateTo}`);
+        const payments = await API.get(`/payments/calculate?date_from=${dateFrom}&date_to=${dateTo}${companyQ}`);
         const payBody = document.getElementById('reports-payments-body');
         payBody.innerHTML = payments.details.map(d => `
           <tr>
@@ -818,7 +867,61 @@
 
         document.getElementById('reports-total-card').style.display = '';
         document.getElementById('reports-total-amount').textContent = formatMoney(payments.grand_total);
+
+        await loadAttendanceReport(dateFrom, dateTo, company);
       } catch (e) { alert(e.message); }
+    }
+
+    // Таблица посещаемости: дети (строки) × даты (столбцы)
+    async function loadAttendanceReport(dateFrom, dateTo, companyId) {
+      const wrap = document.getElementById('reports-attendance-wrap');
+      if (!wrap) return;
+
+      const company = (myCompanies || []).find(c => c.id === companyId);
+      if (!companyId || !company || company.type !== 'kindergarten') {
+        wrap.innerHTML = '<div class="empty-state" style="padding:20px;">Выберите садик в фильтре «Компания» сверху</div>';
+        return;
+      }
+
+      try {
+        const data = await API.get(`/reports/attendance?date_from=${dateFrom}&date_to=${dateTo}&company_id=${companyId}`);
+        if (!data.dates.length || !data.children.length) {
+          wrap.innerHTML = '<div class="empty-state" style="padding:20px;">Нет данных посещаемости за период</div>';
+          return;
+        }
+
+        const headCols = data.dates.map(d => {
+          const dd = new Date(d + 'T00:00:00');
+          const label = dd.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+          return `<th style="text-align:center;white-space:nowrap;">${label}</th>`;
+        }).join('');
+
+        const rows = data.children.map((c, i) => {
+          const cells = data.dates.map(d => {
+            const present = c.attendance[d];
+            if (present === true) return '<td style="text-align:center;color:var(--success);font-weight:700;">✓</td>';
+            if (present === false) return '<td style="text-align:center;color:var(--danger);">×</td>';
+            return '<td style="text-align:center;color:#cbd5e1;">·</td>';
+          }).join('');
+          return `
+            <tr>
+              <td>${i + 1}</td>
+              <td style="white-space:nowrap;"><strong>${escHtml(c.full_name)}</strong></td>
+              ${cells}
+              <td style="text-align:center;font-weight:700;">${c.total_present}</td>
+            </tr>`;
+        }).join('');
+
+        wrap.innerHTML = `
+          <table>
+            <thead>
+              <tr><th>№</th><th>ФИО</th>${headCols}<th style="text-align:center;">Итого</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>`;
+      } catch (e) {
+        wrap.innerHTML = `<div class="empty-state" style="padding:20px;">Ошибка: ${escHtml(e.message)}</div>`;
+      }
     }
 
     // ============================================================
@@ -850,39 +953,87 @@
     // ============================================================
     // ATTENDANCE (children list for kindergartens)
     // ============================================================
+    let _attAvailable = []; // дети садика, которых можно добавить в список
+
     async function openAttendanceModal(lessonId) {
       try {
         const data = await API.get(`/attendance/${lessonId}`);
         document.getElementById('attendance-lesson-id').value = lessonId;
         document.getElementById('attendance-info').innerHTML = `
-          <strong>${escHtml(data.company_name)}</strong> — ${data.total} детей`;
+          <strong>${escHtml(data.company_name)}</strong> — в списке <span id="att-total">${data.total}</span>
+          ${data.lesson_status === 'completed' ? '<span class="badge badge-success">Проведено</span>' : ''}`;
 
-        const tbody = document.getElementById('attendance-body');
-        tbody.innerHTML = data.children.map(c => `
-          <tr>
-            <td><input type="checkbox" class="att-check" data-child="${c.child_id}" ${c.present ? 'checked' : ''}></td>
-            <td>${escHtml(c.full_name)}</td>
-            <td>${c.status === 'trial' ? '<span class="badge badge-warning">Пробный</span>' : '<span class="badge badge-success">Регуляр</span>'}</td>
-          </tr>`).join('');
+        renderAttendanceRows(data.children);
+        _attAvailable = data.available || [];
+        renderAttendanceAddOptions();
 
         updateAttendanceSummary();
-
-        // live counter
-        tbody.querySelectorAll('.att-check').forEach(cb => {
-          cb.addEventListener('change', updateAttendanceSummary);
-        });
-
         openModal('modal-attendance');
       } catch (e) { alert(e.message); }
+    }
+
+    function renderAttendanceRows(children) {
+      const tbody = document.getElementById('attendance-body');
+      if (!children || children.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Список пуст. Добавьте детей через список ниже.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = children.map(c => attendanceRowHtml(c.child_id, c.full_name, c.status, c.present)).join('');
+    }
+
+    function attendanceRowHtml(childId, fullName, status, present) {
+      const badge = status === 'trial' ? '<span class="badge badge-warning">Пробный</span>' : '<span class="badge badge-success">Регуляр</span>';
+      return `
+        <tr data-row-child="${childId}">
+          <td><input type="checkbox" class="att-check" data-child="${childId}" ${present ? 'checked' : ''} onchange="updateAttendanceSummary()"></td>
+          <td>${escHtml(fullName)}</td>
+          <td>${badge}</td>
+          <td><button class="btn btn-sm btn-danger" title="Убрать" onclick="removeChildFromAttendance('${childId}')">×</button></td>
+        </tr>`;
+    }
+
+    function renderAttendanceAddOptions() {
+      const sel = document.getElementById('attendance-add-select');
+      if (!sel) return;
+      const inList = new Set(Array.from(document.querySelectorAll('[data-row-child]')).map(r => r.dataset.rowChild));
+      const opts = _attAvailable.filter(c => !inList.has(c.child_id));
+      sel.innerHTML = '<option value="">— выберите —</option>' +
+        opts.map(c => `<option value="${c.child_id}" data-name="${escAttr(c.full_name)}" data-status="${c.status}">${escHtml(c.full_name)}</option>`).join('');
+    }
+
+    function addChildToAttendance() {
+      const sel = document.getElementById('attendance-add-select');
+      const childId = sel.value;
+      if (!childId) return;
+      const opt = sel.options[sel.selectedIndex];
+      const tbody = document.getElementById('attendance-body');
+      const emptyRow = tbody.querySelector('.empty-state');
+      if (emptyRow) tbody.innerHTML = '';
+      tbody.insertAdjacentHTML('beforeend', attendanceRowHtml(childId, opt.dataset.name, opt.dataset.status, true));
+      renderAttendanceAddOptions();
+      updateAttendanceSummary();
+    }
+
+    function removeChildFromAttendance(childId) {
+      const row = document.querySelector(`[data-row-child="${childId}"]`);
+      if (row) row.remove();
+      const tbody = document.getElementById('attendance-body');
+      if (!tbody.querySelector('[data-row-child]')) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Список пуст. Добавьте детей через список ниже.</td></tr>';
+      }
+      renderAttendanceAddOptions();
+      updateAttendanceSummary();
     }
 
     function updateAttendanceSummary() {
       const total = document.querySelectorAll('.att-check').length;
       const checked = document.querySelectorAll('.att-check:checked').length;
       document.getElementById('attendance-summary').textContent = `Присутствует: ${checked} из ${total}`;
+      const totalEl = document.getElementById('att-total');
+      if (totalEl) totalEl.textContent = total;
     }
 
-    async function saveAttendance() {
+    async function saveAttendance(complete) {
       const lessonId = document.getElementById('attendance-lesson-id').value;
       const checks = document.querySelectorAll('.att-check');
       const marks = [];
@@ -891,7 +1042,7 @@
       });
 
       try {
-        const result = await API.put(`/attendance/${lessonId}`, { marks });
+        const result = await API.put(`/attendance/${lessonId}`, { marks, complete: !!complete });
         alert(result.message);
         closeModal('modal-attendance');
         loadMyLessons();
@@ -901,6 +1052,25 @@
     // ============================================================
     // INIT
     // ============================================================
+    // Загрузить компании учителя и заполнить фильтры по компаниям
+    async function loadMyCompanyFilters() {
+      try {
+        myCompanies = await API.get('/teachers/me/companies') || [];
+        const selects = ['lessons-filter-company', 'reports-filter-company'];
+        selects.forEach(id => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          const val = el.value;
+          el.innerHTML = '<option value="">Все</option>' +
+            myCompanies.map(c => {
+              const typeLabel = c.type === 'kindergarten' ? 'садик' : 'школа';
+              return `<option value="${c.id}">${escHtml(c.name)} (${typeLabel})</option>`;
+            }).join('');
+          if (val) el.value = val;
+        });
+      } catch (e) { console.error(e); }
+    }
+
     (function init() {
       const week = getCurrentWeekRange();
       const month = getCurrentMonthRange();
@@ -908,6 +1078,7 @@
       document.getElementById('lessons-date-to').value = week.to;
       document.getElementById('reports-date-from').value = month.from;
       document.getElementById('reports-date-to').value = month.to;
+      loadMyCompanyFilters();
       const hash = window.location.hash.replace('#', '') || 'lessons';
       navigateTo(hash);
     })();

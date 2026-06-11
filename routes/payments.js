@@ -8,19 +8,45 @@ const router = express.Router();
 router.use(authMiddleware);
 
 /**
+ * Откат на старую формулу (используется когда ставка не задана):
  * Садик: 5000 + (children - 5) * 1000, максимум 10000
- * Школа: ставка учителя или 3500 по умолчанию
+ * Школа: 3500
  */
-function calculatePayment(companyType, childrenCount, customRate, manualPrice) {
-  if (manualPrice !== null && manualPrice !== undefined) {
-    return parseInt(manualPrice) || 0;
-  }
+function defaultFormula(companyType, childrenCount) {
   if (companyType === 'kindergarten') {
     const base = 5000;
     const extra = Math.max(0, childrenCount - 5) * 1000;
     return Math.min(10000, base + extra);
   }
-  return customRate || 3500;
+  return 3500;
+}
+
+/**
+ * Ставка клиента — сколько организация платит центру.
+ * Садик: client_rate за каждого ребёнка. Школа: client_rate за занятие.
+ * Если client_rate не задан — откат на формулу по умолчанию.
+ */
+function calculateClientPayment(companyType, childrenCount, clientRate) {
+  if (clientRate !== null && clientRate !== undefined) {
+    if (companyType === 'kindergarten') return Math.round(clientRate * childrenCount);
+    return Math.round(clientRate);
+  }
+  return defaultFormula(companyType, childrenCount);
+}
+
+/**
+ * Ставка учителя — сколько центр выплачивает педагогу за занятие (фикс).
+ * manualPrice (lesson.price) перекрывает всё (для мастер-классов).
+ * Если ставка учителя не задана — откат на формулу по умолчанию.
+ */
+function calculateTeacherPayment(companyType, childrenCount, teacherRate, manualPrice) {
+  if (manualPrice !== null && manualPrice !== undefined) {
+    return parseInt(manualPrice) || 0;
+  }
+  if (teacherRate !== null && teacherRate !== undefined) {
+    return Math.round(teacherRate);
+  }
+  return defaultFormula(companyType, childrenCount);
 }
 
 // GET /api/payments/calculate
@@ -46,7 +72,7 @@ router.get('/calculate', async (req, res) => {
       .populate({
         path: 'schedule_slot_id',
         populate: [
-          { path: 'company_id', select: 'name type' }
+          { path: 'company_id', select: 'name type client_rate' }
         ]
       })
       .populate('actual_teacher_id', 'full_name')
@@ -70,29 +96,42 @@ router.get('/calculate', async (req, res) => {
       rateMap[`${r.teacher_id.toString()}_${r.company_id.toString()}`] = r.rate;
     }
 
+    const isTeacher = req.user.role === 'teacher';
+
     const paymentDetails = [];
     const teacherTotals = {};
+    const companyTotals = {};
 
     for (const lesson of lessons) {
-      const companyType = lesson.schedule_slot_id.company_id.type;
-      const companyName = lesson.schedule_slot_id.company_id.name;
-      const companyIdStr = lesson.schedule_slot_id.company_id._id.toString();
+      const company = lesson.schedule_slot_id.company_id;
+      const companyType = company.type;
+      const companyName = company.name;
+      const companyIdStr = company._id.toString();
+      const clientRate = (company.client_rate === undefined) ? null : company.client_rate;
       const teacherIdStr = lesson.actual_teacher_id._id.toString();
       const teacherName = lesson.actual_teacher_id.full_name;
+      const childrenCount = lesson.children_count || 0;
 
       const customRate = rateMap[`${teacherIdStr}_${companyIdStr}`];
-      const payment = calculatePayment(companyType, lesson.children_count || 0, customRate, lesson.price);
+      const teacherPayment = calculateTeacherPayment(companyType, childrenCount, customRate, lesson.price);
+      const clientPayment = calculateClientPayment(companyType, childrenCount, clientRate);
+      const profit = clientPayment - teacherPayment;
 
       paymentDetails.push({
         lesson_id: lesson._id.toString(),
         date: lesson.date,
         teacher_id: teacherIdStr,
         teacher_name: teacherName,
+        company_id: companyIdStr,
         company_name: companyName,
         company_type: companyType,
         group_name: lesson.schedule_slot_id.group_name,
-        children_count: lesson.children_count || 0,
-        payment
+        children_count: childrenCount,
+        teacher_payment: teacherPayment,
+        client_payment: clientPayment,
+        profit,
+        // back-compat: для учителя «payment» — его собственная выплата
+        payment: teacherPayment
       });
 
       if (!teacherTotals[teacherIdStr]) {
@@ -100,7 +139,10 @@ router.get('/calculate', async (req, res) => {
           teacher_id: teacherIdStr,
           teacher_name: teacherName,
           total_lessons: 0,
-          total_payment: 0,
+          total_payment: 0,       // выплата учителю (back-compat)
+          total_teacher: 0,
+          total_client: 0,
+          total_profit: 0,
           total_children: 0,
           by_company: {}
         };
@@ -108,27 +150,64 @@ router.get('/calculate', async (req, res) => {
 
       const tt = teacherTotals[teacherIdStr];
       tt.total_lessons++;
-      tt.total_payment += payment;
-      tt.total_children += lesson.children_count || 0;
+      tt.total_payment += teacherPayment;
+      tt.total_teacher += teacherPayment;
+      tt.total_client += clientPayment;
+      tt.total_profit += profit;
+      tt.total_children += childrenCount;
 
       if (!tt.by_company[companyIdStr]) {
-        tt.by_company[companyIdStr] = { company_name: companyName, company_type: companyType, lessons: 0, payment: 0 };
+        tt.by_company[companyIdStr] = {
+          company_name: companyName, company_type: companyType,
+          lessons: 0, payment: 0, teacher_payment: 0, client_payment: 0, profit: 0
+        };
       }
-      tt.by_company[companyIdStr].lessons++;
-      tt.by_company[companyIdStr].payment += payment;
+      const bc = tt.by_company[companyIdStr];
+      bc.lessons++;
+      bc.payment += teacherPayment;
+      bc.teacher_payment += teacherPayment;
+      bc.client_payment += clientPayment;
+      bc.profit += profit;
+
+      // Итоги по компаниям (доход центра от клиентов)
+      if (!companyTotals[companyIdStr]) {
+        companyTotals[companyIdStr] = {
+          company_id: companyIdStr,
+          company_name: companyName,
+          company_type: companyType,
+          total_lessons: 0,
+          total_children: 0,
+          total_client: 0,
+          total_teacher: 0,
+          total_profit: 0
+        };
+      }
+      const ct = companyTotals[companyIdStr];
+      ct.total_lessons++;
+      ct.total_children += childrenCount;
+      ct.total_client += clientPayment;
+      ct.total_teacher += teacherPayment;
+      ct.total_profit += profit;
     }
 
     const summaryByTeacher = Object.values(teacherTotals).map(t => ({
       ...t,
       by_company: Object.values(t.by_company)
     }));
+    const summaryByCompany = Object.values(companyTotals);
 
-    const grandTotal = summaryByTeacher.reduce((sum, t) => sum + t.total_payment, 0);
+    const grandTeacher = summaryByTeacher.reduce((s, t) => s + t.total_teacher, 0);
+    const grandClient = summaryByCompany.reduce((s, c) => s + c.total_client, 0);
+    const grandProfit = grandClient - grandTeacher;
 
     res.json({
       period: { date_from, date_to },
-      grand_total: grandTotal,
+      grand_total: grandTeacher,        // back-compat (выплата учителям)
+      grand_teacher: grandTeacher,      // итого к выплате учителям
+      grand_client: grandClient,        // итого от клиентов
+      grand_profit: grandProfit,        // прибыль центра
       summary_by_teacher: summaryByTeacher,
+      summary_by_company: isTeacher ? [] : summaryByCompany,
       details: paymentDetails
     });
   } catch (e) {

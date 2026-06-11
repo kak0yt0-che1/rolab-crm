@@ -29,7 +29,7 @@ function navigateTo(page) {
   switch (page) {
     case 'dashboard': loadDashboard(); break;
     case 'companies': loadCompanies(); break;
-    case 'teachers': loadTeachers(); break;
+    case 'teachers': loadTeachers(); loadFilterOptions(); break;
     case 'schedule': loadSchedule(); loadFilterOptions(); break;
     case 'lessons': loadLessons(); loadFilterOptions(); break;
     case 'reports': loadFilterOptions(); break;
@@ -105,7 +105,7 @@ async function loadFilterOptions() {
 
   const companySelects = [
     'schedule-filter-company', 'lessons-filter-company',
-    'reports-filter-company', 'slot-company'
+    'reports-filter-company', 'slot-company', 'teacher-filter-company'
   ];
   companySelects.forEach(id => {
     const el = document.getElementById(id);
@@ -161,7 +161,7 @@ async function loadDashboard() {
     } else {
       tbody.innerHTML = lessons.map(l => `
         <tr>
-          <td>${l.time_start}–${l.time_end}</td>
+          <td>${formatTimeRange(l.time_start, l.time_end)}</td>
           <td>${escHtml(l.actual_teacher_name)}</td>
           <td>${escHtml(l.company_name)}</td>
           <td>${escHtml(l.group_name) || '—'}</td>
@@ -221,6 +221,7 @@ function openCompanyModal(data) {
   document.getElementById('company-address').value = data ? data.address : '';
   document.getElementById('company-contact').value = data ? data.contact_person : '';
   document.getElementById('company-phone').value = data ? data.phone : '';
+  document.getElementById('company-client-rate').value = (data && data.client_rate != null) ? data.client_rate : '';
   document.getElementById('modal-company-title').textContent = data ? 'Редактировать компанию' : 'Новая компания';
   openModal('modal-company');
 }
@@ -236,12 +237,14 @@ async function editCompany(id) {
 
 async function saveCompany() {
   const id = document.getElementById('company-edit-id').value;
+  const clientRateRaw = document.getElementById('company-client-rate').value;
   const data = {
     name: document.getElementById('company-name').value.trim(),
     type: document.getElementById('company-type').value,
     address: document.getElementById('company-address').value.trim(),
     contact_person: document.getElementById('company-contact').value.trim(),
-    phone: document.getElementById('company-phone').value.trim()
+    phone: document.getElementById('company-phone').value.trim(),
+    client_rate: clientRateRaw === '' ? null : Number(clientRateRaw)
   };
 
   if (!data.name) { alert('Укажите название'); return; }
@@ -275,10 +278,20 @@ async function deleteCompany(id, name) {
 async function loadTeachers() {
   try {
     const search = document.getElementById('teacher-filter-search').value;
+    const companyFilter = document.getElementById('teacher-filter-company')
+      ? document.getElementById('teacher-filter-company').value : '';
     let query = '/teachers?';
     if (search) query += `search=${encodeURIComponent(search)}&`;
 
-    const teachers = await API.get(query);
+    let teachers = await API.get(query);
+
+    // Фильтрация по компании (педагоги, привязанные к выбранной компании)
+    if (companyFilter) {
+      teachers = teachers.filter(t =>
+        (t.companies || []).some(c => c.company_id === companyFilter)
+      );
+    }
+
     const tbody = document.getElementById('teachers-body');
 
     if (teachers.length === 0) {
@@ -426,7 +439,6 @@ async function openRatesModal(teacherId) {
       const checked = rateMap.hasOwnProperty(c.id) ? 'checked' : '';
       const rateVal = rateMap[c.id] || '';
       const typeLabel = c.type === 'kindergarten' ? '(садик)' : '(школа)';
-      const showRate = c.type === 'school' ? '' : 'style="display:none"';
 
       return `
         <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #eee;">
@@ -434,9 +446,9 @@ async function openRatesModal(teacherId) {
             <input type="checkbox" class="rate-check" data-company="${c.id}" ${checked}>
             <span>${escHtml(c.name)} ${typeLabel}</span>
           </label>
-          <div ${showRate}>
+          <div>
             <input type="number" class="rate-input" data-company="${c.id}" value="${rateVal}"
-              placeholder="3500" style="width:100px;padding:6px 8px;font-size:14px;border:1px solid #d0d0d0;border-radius:4px;">
+              placeholder="ставка за занятие" style="width:140px;padding:6px 8px;font-size:14px;border:1px solid #d0d0d0;border-radius:4px;">
           </div>
         </div>
       `;
@@ -494,7 +506,7 @@ async function loadSchedule() {
     tbody.innerHTML = slots.map(s => `
       <tr>
         <td><strong>${DAYS_RU[s.day_of_week]}</strong></td>
-        <td>${s.time_start}–${s.time_end}</td>
+        <td>${formatTimeRange(s.time_start, s.time_end)}</td>
         <td>${escHtml(s.teacher_name)}</td>
         <td>${escHtml(s.company_name)}</td>
         <td>${companyTypeBadge(s.company_type)}</td>
@@ -637,7 +649,7 @@ async function loadLessons() {
       return `
         <tr>
           <td>${formatDate(l.date)}</td>
-          <td>${l.time_start}–${l.time_end}</td>
+          <td>${formatTimeRange(l.time_start, l.time_end)}</td>
           <td>${teacherDisplay}</td>
           <td>${escHtml(l.company_name)}</td>
           <td>${escHtml(l.group_name) || '—'}</td>
@@ -679,7 +691,7 @@ async function openLessonModal(id) {
     document.getElementById('lesson-info').innerHTML = `
       <table style="width:100%;">
         <tr><td class="text-muted" style="width:140px;">Дата:</td><td><strong>${formatDate(l.date)}</strong></td></tr>
-        <tr><td class="text-muted">Время:</td><td>${l.time_start}–${l.time_end}</td></tr>
+        <tr><td class="text-muted">Время:</td><td>${formatTimeRange(l.time_start, l.time_end)}</td></tr>
         <tr><td class="text-muted">Компания:</td><td>${escHtml(l.company_name)} ${companyTypeBadge(l.company_type)}</td></tr>
         <tr><td class="text-muted">Группа:</td><td>${escHtml(l.group_name) || '—'}</td></tr>
         <tr><td class="text-muted">Педагог:</td><td>${escHtml(l.actual_teacher_name)} ${isSubstituted ? '<span class="badge badge-warning">Замена</span>' : ''}</td></tr>
@@ -827,14 +839,78 @@ async function loadReports() {
       <tr>
         <td>${formatDate(s.date)}</td>
         <td>${escHtml(s.company_name)}</td>
-        <td>${s.time_start}–${s.time_end}</td>
+        <td>${formatTimeRange(s.time_start, s.time_end)}</td>
         <td>${escHtml(s.original_teacher_name)}</td>
         <td>${escHtml(s.substitute_teacher_name)}</td>
         <td>${escHtml(s.reason) || '—'}</td>
       </tr>
     `).join('') || '<tr><td colspan="6" class="empty-state">Нет замен</td></tr>';
+
+    // Таблица посещаемости (нужен выбранный садик)
+    await loadAttendanceReport(dateFrom, dateTo, company, teacher);
   } catch (e) {
     alert(e.message);
+  }
+}
+
+// Таблица посещаемости: дети (строки) × даты (столбцы)
+async function loadAttendanceReport(dateFrom, dateTo, companyId, teacherId) {
+  const wrap = document.getElementById('reports-attendance-wrap');
+  if (!wrap) return;
+
+  // Нужен садик
+  const company = (allCompanies || []).find(c => c.id === companyId);
+  if (!companyId || !company || company.type !== 'kindergarten') {
+    wrap.innerHTML = '<div class="empty-state" style="padding:20px;">Выберите садик в фильтре «Компания» сверху и нажмите «Показать»</div>';
+    return;
+  }
+
+  try {
+    let q = `/reports/attendance?date_from=${dateFrom}&date_to=${dateTo}&company_id=${companyId}`;
+    if (teacherId) q += `&teacher_id=${teacherId}`;
+    const data = await API.get(q);
+
+    if (!data.dates.length || !data.children.length) {
+      wrap.innerHTML = '<div class="empty-state" style="padding:20px;">Нет данных посещаемости за период</div>';
+      return;
+    }
+
+    const headCols = data.dates.map(d => {
+      const dd = new Date(d + 'T00:00:00');
+      const label = dd.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+      return `<th style="text-align:center;white-space:nowrap;">${label}</th>`;
+    }).join('');
+
+    const rows = data.children.map((c, i) => {
+      const cells = data.dates.map(d => {
+        const present = c.attendance[d];
+        if (present === true) return '<td style="text-align:center;color:var(--success);font-weight:700;">✓</td>';
+        if (present === false) return '<td style="text-align:center;color:var(--danger);">×</td>';
+        return '<td style="text-align:center;color:#cbd5e1;">·</td>';
+      }).join('');
+      return `
+        <tr>
+          <td>${i + 1}</td>
+          <td style="white-space:nowrap;"><strong>${escHtml(c.full_name)}</strong> ${childStatusBadge(c.status)}</td>
+          ${cells}
+          <td style="text-align:center;font-weight:700;">${c.total_present}</td>
+        </tr>`;
+    }).join('');
+
+    wrap.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>№</th>
+            <th>ФИО</th>
+            ${headCols}
+            <th style="text-align:center;">Итого</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch (e) {
+    wrap.innerHTML = `<div class="empty-state" style="padding:20px;">Ошибка: ${escHtml(e.message)}</div>`;
   }
 }
 
@@ -856,8 +932,16 @@ async function loadPayments() {
 
     document.getElementById('payments-totals').innerHTML = `
       <div class="stat-card">
-        <div class="stat-value">${formatMoney(result.grand_total)}</div>
-        <div class="stat-label">Итого за период</div>
+        <div class="stat-value">${formatMoney(result.grand_client)}</div>
+        <div class="stat-label">От клиентов</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" style="color:var(--danger)">${formatMoney(result.grand_teacher)}</div>
+        <div class="stat-label">Выплаты учителям</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" style="color:var(--success)">${formatMoney(result.grand_profit)}</div>
+        <div class="stat-label">Прибыль центра</div>
       </div>
       <div class="stat-card">
         <div class="stat-value">${result.details.length}</div>
@@ -865,6 +949,7 @@ async function loadPayments() {
       </div>
     `;
 
+    // Выплаты педагогам
     document.getElementById('payments-summary-card').style.display = '';
     const summaryBody = document.getElementById('payments-summary-body');
     summaryBody.innerHTML = result.summary_by_teacher.map(t => `
@@ -872,7 +957,7 @@ async function loadPayments() {
         <td><strong>${escHtml(t.teacher_name)}</strong></td>
         <td>${t.total_lessons}</td>
         <td>${t.total_children}</td>
-        <td class="text-bold">${formatMoney(t.total_payment)}</td>
+        <td class="text-bold">${formatMoney(t.total_teacher)}</td>
       </tr>
     `).join('') || '<tr><td colspan="4" class="empty-state">Нет данных</td></tr>';
 
@@ -882,11 +967,42 @@ async function loadPayments() {
           <td>ИТОГО</td>
           <td>${result.details.length}</td>
           <td>${result.summary_by_teacher.reduce((s, t) => s + t.total_children, 0)}</td>
-          <td>${formatMoney(result.grand_total)}</td>
+          <td>${formatMoney(result.grand_teacher)}</td>
         </tr>
       `;
     }
 
+    // Доход по компаниям (клиент → центр)
+    const companyCard = document.getElementById('payments-company-card');
+    const companyBody = document.getElementById('payments-company-body');
+    const byCompany = result.summary_by_company || [];
+    if (companyBody) {
+      companyCard.style.display = '';
+      companyBody.innerHTML = byCompany.map(c => `
+        <tr>
+          <td><strong>${escHtml(c.company_name)}</strong></td>
+          <td>${companyTypeBadge(c.company_type)}</td>
+          <td>${c.total_lessons}</td>
+          <td>${c.total_children}</td>
+          <td class="text-bold">${formatMoney(c.total_client)}</td>
+          <td class="text-danger">${formatMoney(c.total_teacher)}</td>
+          <td class="text-success text-bold">${formatMoney(c.total_profit)}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="7" class="empty-state">Нет данных</td></tr>';
+
+      if (byCompany.length > 0) {
+        companyBody.innerHTML += `
+          <tr style="background:#f0f9ff;font-weight:700;">
+            <td colspan="4">ИТОГО</td>
+            <td>${formatMoney(result.grand_client)}</td>
+            <td>${formatMoney(result.grand_teacher)}</td>
+            <td>${formatMoney(result.grand_profit)}</td>
+          </tr>
+        `;
+      }
+    }
+
+    // Детализация
     document.getElementById('payments-details-card').style.display = '';
     document.getElementById('payments-details-body').innerHTML = result.details.map(d => `
       <tr>
@@ -896,9 +1012,11 @@ async function loadPayments() {
         <td>${companyTypeBadge(d.company_type)}</td>
         <td>${escHtml(d.group_name) || '—'}</td>
         <td>${d.children_count}</td>
-        <td class="text-bold">${formatMoney(d.payment)}</td>
+        <td>${formatMoney(d.client_payment)}</td>
+        <td class="text-danger">${formatMoney(d.teacher_payment)}</td>
+        <td class="text-success text-bold">${formatMoney(d.profit)}</td>
       </tr>
-    `).join('') || '<tr><td colspan="7" class="empty-state">Нет данных</td></tr>';
+    `).join('') || '<tr><td colspan="9" class="empty-state">Нет данных</td></tr>';
   } catch (e) {
     alert(e.message);
   }
@@ -1194,30 +1312,20 @@ async function doImportChildren() {
 // ============================================================
 // ATTENDANCE (Checklist)
 // ============================================================
+let _attAvailable = []; // дети садика, которых можно добавить в список
+
 async function openAttendanceModal(lessonId) {
   try {
     const data = await API.get(`/attendance/${lessonId}`);
 
     document.getElementById('attendance-lesson-id').value = lessonId;
     document.getElementById('attendance-info').innerHTML = `
-      <p class="text-muted">Садик: <strong>${escHtml(data.company_name)}</strong> | Всего детей: ${data.total}</p>
+      <p class="text-muted">Садик: <strong>${escHtml(data.company_name)}</strong> | В списке: <span id="att-total">${data.total}</span> ${data.lesson_status === 'completed' ? '<span class="badge badge-success">Проведено</span>' : ''}</p>
     `;
 
-    const tbody = document.getElementById('attendance-body');
-    if (data.children.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Нет детей в списке. Добавьте детей в разделе «Дети (садики)»</td></tr>';
-    } else {
-      tbody.innerHTML = data.children.map(c => `
-        <tr>
-          <td>
-            <input type="checkbox" class="attendance-check" data-child="${c.child_id}" ${c.present ? 'checked' : ''}
-              onchange="updateAttendanceSummary()" style="width:20px;height:20px;cursor:pointer;">
-          </td>
-          <td>${escHtml(c.full_name)}</td>
-          <td>${childStatusBadge(c.status)}</td>
-        </tr>
-      `).join('');
-    }
+    renderAttendanceRows(data.children);
+    _attAvailable = data.available || [];
+    renderAttendanceAddOptions();
 
     updateAttendanceSummary();
     openModal('modal-attendance');
@@ -1226,13 +1334,75 @@ async function openAttendanceModal(lessonId) {
   }
 }
 
+function renderAttendanceRows(children) {
+  const tbody = document.getElementById('attendance-body');
+  if (!children || children.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Список пуст. Добавьте детей через выпадающий список ниже.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = children.map(c => attendanceRowHtml(c.child_id, c.full_name, c.status, c.present)).join('');
+}
+
+function attendanceRowHtml(childId, fullName, status, present) {
+  return `
+    <tr data-row-child="${childId}" data-name="${escAttr(fullName)}" data-status="${status}">
+      <td>
+        <input type="checkbox" class="attendance-check" data-child="${childId}" ${present ? 'checked' : ''}
+          onchange="updateAttendanceSummary()" style="width:20px;height:20px;cursor:pointer;">
+      </td>
+      <td>${escHtml(fullName)}</td>
+      <td>${childStatusBadge(status)}</td>
+      <td><button class="btn btn-sm btn-danger" title="Убрать из списка" onclick="removeChildFromAttendance('${childId}')">×</button></td>
+    </tr>`;
+}
+
+function renderAttendanceAddOptions() {
+  const sel = document.getElementById('attendance-add-select');
+  if (!sel) return;
+  const inList = new Set(Array.from(document.querySelectorAll('[data-row-child]')).map(r => r.dataset.rowChild));
+  const opts = _attAvailable.filter(c => !inList.has(c.child_id));
+  sel.innerHTML = '<option value="">— выберите —</option>' +
+    opts.map(c => `<option value="${c.child_id}" data-name="${escAttr(c.full_name)}" data-status="${c.status}">${escHtml(c.full_name)}</option>`).join('');
+}
+
+function addChildToAttendance() {
+  const sel = document.getElementById('attendance-add-select');
+  const childId = sel.value;
+  if (!childId) return;
+  const opt = sel.options[sel.selectedIndex];
+  const fullName = opt.dataset.name;
+  const status = opt.dataset.status;
+
+  const tbody = document.getElementById('attendance-body');
+  // убрать заглушку «Список пуст»
+  const emptyRow = tbody.querySelector('.empty-state');
+  if (emptyRow) tbody.innerHTML = '';
+
+  tbody.insertAdjacentHTML('beforeend', attendanceRowHtml(childId, fullName, status, true));
+  renderAttendanceAddOptions();
+  updateAttendanceSummary();
+}
+
+function removeChildFromAttendance(childId) {
+  const row = document.querySelector(`[data-row-child="${childId}"]`);
+  if (row) row.remove();
+  const tbody = document.getElementById('attendance-body');
+  if (!tbody.querySelector('[data-row-child]')) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Список пуст. Добавьте детей через выпадающий список ниже.</td></tr>';
+  }
+  renderAttendanceAddOptions();
+  updateAttendanceSummary();
+}
+
 function updateAttendanceSummary() {
   const total = document.querySelectorAll('.attendance-check').length;
   const present = document.querySelectorAll('.attendance-check:checked').length;
   document.getElementById('attendance-summary').textContent = `Присутствует: ${present} из ${total}`;
+  const totalEl = document.getElementById('att-total');
+  if (totalEl) totalEl.textContent = total;
 }
 
-async function saveAttendance() {
+async function saveAttendance(complete) {
   const lessonId = document.getElementById('attendance-lesson-id').value;
   const checks = document.querySelectorAll('.attendance-check');
   const marks = [];
@@ -1245,7 +1415,7 @@ async function saveAttendance() {
   });
 
   try {
-    const result = await API.put(`/attendance/${lessonId}`, { marks });
+    const result = await API.put(`/attendance/${lessonId}`, { marks, complete: !!complete });
     alert(result.message);
     closeModal('modal-attendance');
     if (currentPage === 'lessons') loadLessons();

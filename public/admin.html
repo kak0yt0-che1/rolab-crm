@@ -119,6 +119,12 @@
           <label>Поиск</label>
           <input type="text" id="teacher-filter-search" placeholder="ФИО или логин..." oninput="loadTeachers()">
         </div>
+        <div class="form-group">
+          <label>Компания</label>
+          <select id="teacher-filter-company" onchange="loadTeachers()">
+            <option value="">Все</option>
+          </select>
+        </div>
       </div>
 
       <div class="card">
@@ -343,6 +349,18 @@
         </div>
       </div>
 
+      <div class="card mt-16" id="reports-attendance-card">
+        <div class="card-header">
+          <h2>Посещаемость по датам</h2>
+          <small class="text-muted">Выберите садик в фильтре «Компания» и нажмите «Показать»</small>
+        </div>
+        <div class="card-body no-pad">
+          <div class="table-wrap" id="reports-attendance-wrap">
+            <div class="empty-state" style="padding:20px;">Выберите садик в фильтре сверху</div>
+          </div>
+        </div>
+      </div>
+
       <div class="card mt-16">
         <div class="card-header"><h2>Замены</h2></div>
         <div class="card-body no-pad">
@@ -394,7 +412,7 @@
       <div class="stats-grid" id="payments-totals"></div>
 
       <div class="card" id="payments-summary-card" style="display:none;">
-        <div class="card-header"><h2>Итого по педагогам</h2></div>
+        <div class="card-header"><h2>Выплаты педагогам</h2></div>
         <div class="card-body no-pad">
           <div class="table-wrap">
             <table>
@@ -403,10 +421,32 @@
                   <th>Педагог</th>
                   <th>Занятий</th>
                   <th>Детей</th>
-                  <th>Сумма</th>
+                  <th>К выплате</th>
                 </tr>
               </thead>
               <tbody id="payments-summary-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt-16" id="payments-company-card" style="display:none;">
+        <div class="card-header"><h2>Доход по компаниям (клиент → центр)</h2></div>
+        <div class="card-body no-pad">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Компания</th>
+                  <th>Тип</th>
+                  <th>Занятий</th>
+                  <th>Детей</th>
+                  <th>Клиент платит</th>
+                  <th>Выплата учителю</th>
+                  <th>Прибыль</th>
+                </tr>
+              </thead>
+              <tbody id="payments-company-body"></tbody>
             </table>
           </div>
         </div>
@@ -425,7 +465,9 @@
                   <th>Тип</th>
                   <th>Группа</th>
                   <th>Дети</th>
-                  <th>Оплата</th>
+                  <th>Клиент</th>
+                  <th>Учитель</th>
+                  <th>Прибыль</th>
                 </tr>
               </thead>
               <tbody id="payments-details-body"></tbody>
@@ -528,6 +570,11 @@
             <input type="text" id="company-phone">
           </div>
         </div>
+        <div class="form-group">
+          <label>Ставка клиента (₸)</label>
+          <input type="number" id="company-client-rate" min="0" placeholder="Не задана — формула по умолчанию">
+          <small class="text-muted" id="company-client-rate-hint">Садик — сумма за каждого ребёнка. Школа — сумма за занятие.</small>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-outline" onclick="closeModal('modal-company')">Отмена</button>
@@ -587,7 +634,7 @@
       </div>
       <div class="modal-body">
         <input type="hidden" id="rates-teacher-id">
-        <p class="text-muted mb-16">Выберите компании и укажите индивидуальные ставки для школ (оставьте пустым для ставки по умолчанию 3500 тг).</p>
+        <p class="text-muted mb-16">Выберите компании и укажите ставку педагога за занятие (сколько центр выплачивает учителю). Пусто — формула по умолчанию (садик 5000+, школа 3500 тг).</p>
         <div id="rates-list"></div>
       </div>
       <div class="modal-footer">
@@ -839,17 +886,28 @@
                   <th style="width:50px;">✓</th>
                   <th>ФИО</th>
                   <th>Статус</th>
+                  <th style="width:50px;"></th>
                 </tr>
               </thead>
               <tbody id="attendance-body"></tbody>
             </table>
           </div>
         </div>
+        <div class="form-row mt-16" style="align-items:flex-end;">
+          <div class="form-group" style="flex:1;">
+            <label>Добавить ребёнка в список</label>
+            <select id="attendance-add-select"><option value="">— выберите —</option></select>
+          </div>
+          <div class="form-group">
+            <button class="btn btn-outline" onclick="addChildToAttendance()">+ Добавить</button>
+          </div>
+        </div>
         <div class="mt-16" id="attendance-summary" style="font-weight:600;color:var(--primary);"></div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-outline" onclick="closeModal('modal-attendance')">Закрыть</button>
-        <button class="btn btn-success" onclick="saveAttendance()">Сохранить отметки ✓</button>
+        <button class="btn btn-outline" onclick="saveAttendance(false)">Сохранить список</button>
+        <button class="btn btn-success" onclick="saveAttendance(true)">Провести ✓</button>
       </div>
     </div>
   </div>
