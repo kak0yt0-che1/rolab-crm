@@ -218,7 +218,9 @@ async function importFromXlsx() {
   for (const t of TEACHERS) {
     let user = await User.findOne({ username: t.username });
     if (!user) {
-      const password = t.username + '123';
+      const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+      let password = '';
+      for (let i = 0; i < 8; i++) password += chars[require('crypto').randomInt(chars.length)];
       const hash = bcrypt.hashSync(password, 10);
       user = await User.create({
         username: t.username,

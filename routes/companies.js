@@ -1,18 +1,10 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const Company = require('../models/Company');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
+const { badId, escapeRegex, serverError } = require('../utils/http');
 
 const router = express.Router();
 router.use(authMiddleware);
-
-function badId(res, id) {
-  if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ error: 'Неверный идентификатор' });
-    return true;
-  }
-  return false;
-}
 
 // GET — все пользователи могут читать список компаний (нужно учителям для расписания)
 router.get('/', async (req, res) => {
@@ -27,12 +19,12 @@ router.get('/', async (req, res) => {
     }
 
     if (type) filter.type = type;
-    if (search) filter.name = { $regex: search, $options: 'i' };
+    if (search) filter.name = { $regex: escapeRegex(search), $options: 'i' };
 
     const companies = await Company.find(filter).sort({ name: 1 });
     res.json(companies);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -43,7 +35,7 @@ router.get('/:id', async (req, res) => {
     if (!company) return res.status(404).json({ error: 'Компания не найдена' });
     res.json(company);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -60,7 +52,7 @@ router.post('/', adminOnly, async (req, res) => {
     });
     res.status(201).json(company);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -83,7 +75,7 @@ router.put('/:id', adminOnly, async (req, res) => {
     if (!company) return res.status(404).json({ error: 'Компания не найдена' });
     res.json(company);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -93,7 +85,7 @@ router.delete('/:id', adminOnly, async (req, res) => {
     await Company.findByIdAndUpdate(req.params.id, { active: false });
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 

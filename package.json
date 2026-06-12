@@ -3,17 +3,24 @@
   "version": "1.0.0",
   "description": "Система учета занятий ROLAB",
   "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "lint": "node --check server.js && node -e \"['middleware','routes','models','utils','database'].forEach(d=>require('fs').readdirSync(d).filter(f=>f.endsWith('.js')).forEach(f=>require('child_process').execFileSync(process.execPath,['--check',d+'/'+f])))\" && echo OK",
     "init-db": "node database/init.js",
     "import-xlsx": "node database/import-xlsx.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.23.1",
     "xlsx": "^0.18.5"

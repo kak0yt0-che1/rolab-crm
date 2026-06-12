@@ -1,11 +1,19 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const compression = require('compression');
 const path = require('path');
 const fs = require('fs');
 
 const { connectDb } = require('./database/connection');
 const initializeDb = require('./database/init');
+
+// Без секрета JWT работать нельзя — упасть сразу, а не на первом логине
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET === 'change-this-to-random-string') {
+  console.error('JWT_SECRET не задан (или оставлен дефолтным) в .env');
+  process.exit(1);
+}
 
 async function startServer() {
   await connectDb();
@@ -14,8 +22,18 @@ async function startServer() {
   const app = express();
   const PORT = process.env.PORT || 3000;
 
-  app.use(cors());
-  app.use(express.json());
+  // За реверс-прокси (Render) — нужен реальный IP для rate-limit
+  app.set('trust proxy', 1);
+
+  // CSP отключён: admin.html грузит SheetJS с CDN, страницы используют inline-скрипты
+  app.use(helmet({ contentSecurityPolicy: false }));
+  app.use(compression());
+
+  // CORS: по умолчанию same-origin фронт; внешние origin — через переменную окружения
+  app.use(cors(process.env.CORS_ORIGIN ? { origin: process.env.CORS_ORIGIN.split(',') } : {}));
+
+  // 2mb — импорт списков детей из Excel идёт через JSON-тело
+  app.use(express.json({ limit: '2mb' }));
   app.use(express.static(path.join(__dirname, 'public')));
 
   app.use('/api/auth', require('./routes/auth'));
@@ -31,10 +49,11 @@ async function startServer() {
     app.use('/api/dev', require('./routes/dev'));
   }
 
+  // SPA-фолбэк: отдать файл из public, иначе login.html; /api/* → 404 JSON
   app.get(/(.*)/, (req, res) => {
     if (!req.path.startsWith('/api')) {
-      const filePath = path.join(__dirname, 'public', req.path);
-      if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      const filePath = path.join(__dirname, 'public', path.normalize(req.path).replace(/^(\.\.[\\/])+/, ''));
+      if (filePath.startsWith(path.join(__dirname, 'public')) && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
         return res.sendFile(filePath);
       }
       return res.sendFile(path.join(__dirname, 'public', 'login.html'));
@@ -43,14 +62,20 @@ async function startServer() {
     return res.status(404).json({ error: 'Not found' });
   });
 
+  // Центральный обработчик ошибок (JSON parse errors, всё, что прошло мимо try/catch роутов)
   app.use((err, req, res, next) => {
-    console.error('Ошибка:', err.message);
-    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+    console.error('Ошибка:', err);
+    if (err.type === 'entity.parse.failed' || err.type === 'entity.too.large') {
+      return res.status(400).json({ error: 'Некорректное тело запроса' });
+    }
+    const message = process.env.NODE_ENV === 'production'
+      ? 'Внутренняя ошибка сервера'
+      : err.message;
+    res.status(err.status || 500).json({ error: message });
   });
 
   app.listen(PORT, () => {
     console.log(`ROLAB server started on port ${PORT}`);
-    console.log(`Вход: admin1 / Admin@1234  или  admin2 / Rolab@5678`);
   });
 }
 

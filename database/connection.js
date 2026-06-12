@@ -10,9 +10,18 @@ async function connectDb() {
 
   await mongoose.connect(uri, {
     serverSelectionTimeoutMS: 30000,
-    connectTimeoutMS: 30000
+    connectTimeoutMS: 30000,
+    maxPoolSize: 10
   });
   connected = true;
+
+  mongoose.connection.on('error', err => {
+    console.error('Ошибка соединения MongoDB:', err.message);
+  });
+  mongoose.connection.on('disconnected', () => {
+    console.warn('MongoDB отключена, mongoose попробует переподключиться');
+  });
+
   console.log('✅ MongoDB подключена');
 }
 

@@ -1,23 +1,15 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const mongoose = require('mongoose');
 const User = require('../models/User');
 const Company = require('../models/Company');
 const ScheduleSlot = require('../models/ScheduleSlot');
 const Lesson = require('../models/Lesson');
 const Substitution = require('../models/Substitution');
 const { authMiddleware, devOnly } = require('../middleware/auth');
+const { badId, serverError } = require('../utils/http');
 
 const router = express.Router();
 router.use(authMiddleware, devOnly);
-
-function badId(res, id) {
-  if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ error: 'Неверный идентификатор' });
-    return true;
-  }
-  return false;
-}
 
 // Все пользователи
 router.get('/users', async (req, res) => {
@@ -33,7 +25,7 @@ router.get('/users', async (req, res) => {
       active: u.active,
       created_at: u.created_at
     })));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // Все компании
@@ -41,7 +33,7 @@ router.get('/companies', async (req, res) => {
   try {
     const companies = await Company.find().sort({ name: 1 });
     res.json(companies);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // Все расписания
@@ -64,7 +56,7 @@ router.get('/schedule', async (req, res) => {
       active: s.active,
       created_at: s.created_at
     })));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // Все занятия
@@ -107,7 +99,7 @@ router.get('/lessons', async (req, res) => {
       created_at: l.created_at,
       updated_at: l.updated_at
     })));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // Все замены
@@ -127,7 +119,7 @@ router.get('/substitutions', async (req, res) => {
       reason: s.reason,
       created_at: s.created_at
     })));
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // Статистика БД
@@ -149,7 +141,7 @@ router.get('/stats', async (req, res) => {
       lessons, substitutions: subs,
       lessons_by_status: lessonsByStatus
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // Сбросить пароль пользователя
@@ -161,7 +153,7 @@ router.put('/users/:id/reset-password', async (req, res) => {
     const hash = bcrypt.hashSync(password, 10);
     await User.findByIdAndUpdate(req.params.id, { password_hash: hash, plain_password: password });
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // Создать пользователя (dev)
@@ -174,7 +166,7 @@ router.post('/users', async (req, res) => {
     const hash = bcrypt.hashSync(password, 10);
     const user = await User.create({ username, password_hash: hash, plain_password: password, role, full_name, phone: phone || '' });
     res.status(201).json({ id: user._id.toString(), username: user.username, role: user.role, full_name: user.full_name });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 // Удалить/деактивировать пользователя
@@ -183,7 +175,7 @@ router.delete('/users/:id', async (req, res) => {
   try {
     await User.findByIdAndUpdate(req.params.id, { active: false });
     res.json({ success: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { serverError(res, e); }
 });
 
 module.exports = router;

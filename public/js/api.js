@@ -43,20 +43,27 @@ const API = {
       opts.body = JSON.stringify(body);
     }
 
-    // For GET with query params
-    let url = this.baseUrl + path;
-
-    const res = await fetch(url, opts);
+    let res;
+    try {
+      res = await fetch(this.baseUrl + path, opts);
+    } catch {
+      throw new Error('Нет соединения с сервером. Проверьте интернет.');
+    }
 
     if (res.status === 401) {
       this.logout();
       return;
     }
 
-    const data = await res.json();
+    let data = null;
+    try {
+      data = await res.json();
+    } catch {
+      // сервер ответил не-JSON (например, страница ошибки прокси)
+    }
 
     if (!res.ok) {
-      throw new Error(data.error || 'Ошибка запроса');
+      throw new Error((data && data.error) || `Ошибка запроса (${res.status})`);
     }
 
     return data;

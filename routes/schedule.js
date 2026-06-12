@@ -5,18 +5,11 @@ const Lesson = require('../models/Lesson');
 const TeacherRate = require('../models/TeacherRate');
 const User = require('../models/User');
 const Company = require('../models/Company');
-const { authMiddleware, adminOnly } = require('../middleware/auth');
+const { authMiddleware } = require('../middleware/auth');
+const { badId, serverError } = require('../utils/http');
 
 const router = express.Router();
 router.use(authMiddleware);
-
-function badId(res, id) {
-  if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ error: 'Неверный идентификатор' });
-    return true;
-  }
-  return false;
-}
 
 function formatSlot(s) {
   return {
@@ -58,7 +51,7 @@ router.get('/', async (req, res) => {
 
     res.json(slots.map(formatSlot));
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -107,7 +100,7 @@ router.post('/', async (req, res) => {
 
     res.status(201).json(formatSlot(populated));
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -144,7 +137,7 @@ router.put('/:id', async (req, res) => {
 
     res.json(formatSlot(populated));
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -162,7 +155,7 @@ router.delete('/:id', async (req, res) => {
     await ScheduleSlot.findByIdAndUpdate(req.params.id, { active: false });
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -183,34 +176,47 @@ router.post('/generate', async (req, res) => {
     const slots = await ScheduleSlot.find(slotFilter);
     const dayMap = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 0 }; // ISO → JS getDay()
 
-    let created = 0;
     const start = new Date(date_from);
     const end = new Date(date_to);
+    if (isNaN(start) || isNaN(end) || end < start) {
+      return res.status(400).json({ error: 'Некорректный период дат' });
+    }
 
+    const docs = [];
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       const jsDay = d.getDay();
       const dateStr = d.toISOString().slice(0, 10);
 
       for (const slot of slots) {
         if (dayMap[slot.day_of_week] === jsDay) {
-          try {
-            await Lesson.create({
-              schedule_slot_id: slot._id,
-              date: dateStr,
-              actual_teacher_id: slot.teacher_id,
-              status: 'planned'
-            });
-            created++;
-          } catch (dupErr) {
-            // ignore duplicate key errors (lesson already exists)
-          }
+          docs.push({
+            schedule_slot_id: slot._id,
+            date: dateStr,
+            actual_teacher_id: slot.teacher_id,
+            status: 'planned'
+          });
+        }
+      }
+    }
+
+    // ordered:false — дубликаты (занятие уже существует) пропускаются, остальные вставляются
+    let created = 0;
+    if (docs.length) {
+      try {
+        const inserted = await Lesson.insertMany(docs, { ordered: false });
+        created = inserted.length;
+      } catch (bulkErr) {
+        if (bulkErr.code === 11000 || bulkErr.writeErrors) {
+          created = bulkErr.insertedDocs ? bulkErr.insertedDocs.length : (docs.length - (bulkErr.writeErrors || []).length);
+        } else {
+          throw bulkErr;
         }
       }
     }
 
     res.json({ created, message: `Создано ${created} занятий` });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 

@@ -3,17 +3,10 @@ const mongoose = require('mongoose');
 const KindergartenChild = require('../models/KindergartenChild');
 const Company = require('../models/Company');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
+const { badId, escapeRegex, serverError } = require('../utils/http');
 
 const router = express.Router();
 router.use(authMiddleware);
-
-function badId(res, id) {
-  if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ error: 'Неверный идентификатор' });
-    return true;
-  }
-  return false;
-}
 
 // GET /api/children?company_id=...&status=...&search=...
 router.get('/', async (req, res) => {
@@ -35,7 +28,7 @@ router.get('/', async (req, res) => {
       filter.status = status;
     }
     if (search) {
-      filter.full_name = { $regex: search, $options: 'i' };
+      filter.full_name = { $regex: escapeRegex(search), $options: 'i' };
     }
 
     const children = await KindergartenChild.find(filter)
@@ -50,7 +43,7 @@ router.get('/', async (req, res) => {
 
     res.json(result);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -93,7 +86,7 @@ router.get('/groups/:companyId', async (req, res) => {
 
     res.json(result);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -106,7 +99,7 @@ router.get('/:id', async (req, res) => {
     if (!child) return res.status(404).json({ error: 'Ребёнок не найден' });
     res.json(child);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -133,7 +126,7 @@ router.post('/', adminOnly, async (req, res) => {
     });
     res.status(201).json(child);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -151,7 +144,7 @@ router.put('/:id', adminOnly, async (req, res) => {
     if (!child) return res.status(404).json({ error: 'Ребёнок не найден' });
     res.json(child);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -168,7 +161,7 @@ router.put('/:id/promote', adminOnly, async (req, res) => {
     await child.save();
     res.json({ success: true, message: 'Ребёнок переведён в регуляры' });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -179,7 +172,7 @@ router.delete('/:id', adminOnly, async (req, res) => {
     await KindergartenChild.findByIdAndUpdate(req.params.id, { active: false });
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -196,14 +189,14 @@ router.post('/import', adminOnly, async (req, res) => {
     let skipped = 0;
 
     for (const item of children) {
-      if (!item.full_name || !item.company_id) {
+      if (!item.full_name || !mongoose.isValidObjectId(item.company_id)) {
         skipped++;
         continue;
       }
 
       // Проверяем дубли по имени и садику
       const exists = await KindergartenChild.findOne({
-        full_name: { $regex: `^${item.full_name.trim()}$`, $options: 'i' },
+        full_name: { $regex: `^${escapeRegex(item.full_name.trim())}$`, $options: 'i' },
         company_id: item.company_id
       });
 
@@ -225,7 +218,7 @@ router.post('/import', adminOnly, async (req, res) => {
       message: `Импортировано: ${created}, пропущено (дубли): ${skipped}`
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 

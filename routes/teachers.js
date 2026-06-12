@@ -1,40 +1,20 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 const User = require('../models/User');
 const TeacherRate = require('../models/TeacherRate');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
+const { badId, escapeRegex, serverError } = require('../utils/http');
 
 const router = express.Router();
 router.use(authMiddleware);
 
-function badId(res, id) {
-  if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ error: 'Неверный идентификатор' });
-    return true;
-  }
-  return false;
-}
-
-function generatePassword(length = 6) {
+function generatePassword(length = 8) {
   const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
   let pwd = '';
-  for (let i = 0; i < length; i++) pwd += chars[Math.floor(Math.random() * chars.length)];
+  for (let i = 0; i < length; i++) pwd += chars[crypto.randomInt(chars.length)];
   return pwd;
-}
-
-async function attachCompanies(teacher) {
-  const rates = await TeacherRate.find({ teacher_id: teacher._id }).populate('company_id');
-  return rates
-    .filter(r => r.company_id && r.company_id.active)
-    .map(r => ({
-      id: r._id.toString(),
-      teacher_id: teacher._id.toString(),
-      company_id: r.company_id._id.toString(),
-      company_name: r.company_id.name,
-      company_type: r.company_id.type,
-      rate: r.rate
-    }));
 }
 
 // GET /api/teachers — только для админа/dev
@@ -48,12 +28,31 @@ router.get('/', adminOnly, async (req, res) => {
       filter.active = true;
     }
     if (search) filter.$or = [
-      { full_name: { $regex: search, $options: 'i' } },
-      { username: { $regex: search, $options: 'i' } }
+      { full_name: { $regex: escapeRegex(search), $options: 'i' } },
+      { username: { $regex: escapeRegex(search), $options: 'i' } }
     ];
 
     const teachers = await User.find(filter).sort({ full_name: 1 });
-    const result = await Promise.all(teachers.map(async t => ({
+
+    // Одним запросом ставки всех педагогов (вместо запроса на каждого)
+    const allRates = await TeacherRate.find({ teacher_id: { $in: teachers.map(t => t._id) } })
+      .populate('company_id');
+    const ratesByTeacher = {};
+    for (const r of allRates) {
+      if (!r.company_id || !r.company_id.active) continue;
+      const tid = r.teacher_id.toString();
+      if (!ratesByTeacher[tid]) ratesByTeacher[tid] = [];
+      ratesByTeacher[tid].push({
+        id: r._id.toString(),
+        teacher_id: tid,
+        company_id: r.company_id._id.toString(),
+        company_name: r.company_id.name,
+        company_type: r.company_id.type,
+        rate: r.rate
+      });
+    }
+
+    const result = teachers.map(t => ({
       id: t._id.toString(),
       username: t.username,
       full_name: t.full_name,
@@ -61,11 +60,11 @@ router.get('/', adminOnly, async (req, res) => {
       plain_password: t.plain_password,
       active: t.active,
       created_at: t.created_at,
-      companies: await attachCompanies(t)
-    })));
+      companies: ratesByTeacher[t._id.toString()] || []
+    }));
     res.json(result);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -75,7 +74,7 @@ router.get('/list-names', async (req, res) => {
     const teachers = await User.find({ role: 'teacher', active: true }, 'full_name').sort({ full_name: 1 });
     res.json(teachers.map(t => ({ id: t._id.toString(), full_name: t.full_name })));
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -93,7 +92,7 @@ router.get('/me/companies', async (req, res) => {
       }));
     res.json(companies);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -123,7 +122,7 @@ router.get('/:id', adminOnly, async (req, res) => {
       }))
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -143,9 +142,10 @@ router.post('/', adminOnly, async (req, res) => {
       role: 'teacher', full_name, phone: phone || ''
     });
 
-    if (company_ids && Array.isArray(company_ids)) {
-      for (const cid of company_ids) {
-        await TeacherRate.create({ teacher_id: teacher._id, company_id: cid, rate: null });
+    if (Array.isArray(company_ids)) {
+      const validIds = company_ids.filter(cid => mongoose.isValidObjectId(cid));
+      if (validIds.length) {
+        await TeacherRate.insertMany(validIds.map(cid => ({ teacher_id: teacher._id, company_id: cid, rate: null })));
       }
     }
 
@@ -159,7 +159,7 @@ router.post('/', adminOnly, async (req, res) => {
       created_at: teacher.created_at
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -191,7 +191,7 @@ router.put('/:id', adminOnly, async (req, res) => {
       created_at: teacher.created_at
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -202,7 +202,7 @@ router.delete('/:id', adminOnly, async (req, res) => {
     await User.findOneAndUpdate({ _id: req.params.id, role: 'teacher' }, { active: false });
     res.json({ success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -220,7 +220,7 @@ router.get('/:id/rates', adminOnly, async (req, res) => {
       rate: r.rate
     })));
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -232,8 +232,11 @@ router.put('/:id/rates', adminOnly, async (req, res) => {
 
   try {
     await TeacherRate.deleteMany({ teacher_id: req.params.id });
-    for (const r of rates) {
-      await TeacherRate.create({ teacher_id: req.params.id, company_id: r.company_id, rate: r.rate || null });
+    const validRates = rates.filter(r => r && mongoose.isValidObjectId(r.company_id));
+    if (validRates.length) {
+      await TeacherRate.insertMany(validRates.map(r => ({
+        teacher_id: req.params.id, company_id: r.company_id, rate: r.rate || null
+      })));
     }
     const updated = await TeacherRate.find({ teacher_id: req.params.id }).populate('company_id');
     res.json(updated.map(r => ({
@@ -245,7 +248,7 @@ router.put('/:id/rates', adminOnly, async (req, res) => {
       rate: r.rate
     })));
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 

@@ -6,6 +6,7 @@ const Attendance = require('../models/Attendance');
 const KindergartenChild = require('../models/KindergartenChild');
 const Company = require('../models/Company');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
+const { serverError } = require('../utils/http');
 const { calculateClientPayment } = require('../utils/payment');
 
 const router = express.Router();
@@ -97,7 +98,7 @@ router.get('/summary', async (req, res) => {
       byCompany: Object.values(byCompanyMap).sort((a, b) => a.company_name.localeCompare(b.company_name))
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -150,7 +151,7 @@ router.get('/substitutions', async (req, res) => {
       created_at: s.created_at
     })));
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -238,7 +239,7 @@ router.get('/attendance', async (req, res) => {
       children: rows
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -340,7 +341,7 @@ router.get('/export-data', adminOnly, async (req, res) => {
 
     res.json(base);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 

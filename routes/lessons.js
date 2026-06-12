@@ -2,19 +2,13 @@ const express = require('express');
 const mongoose = require('mongoose');
 const Lesson = require('../models/Lesson');
 const Substitution = require('../models/Substitution');
+const Attendance = require('../models/Attendance');
 const User = require('../models/User');
 const { authMiddleware } = require('../middleware/auth');
+const { badId, serverError } = require('../utils/http');
 
 const router = express.Router();
 router.use(authMiddleware);
-
-function badId(res, id) {
-  if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ error: 'Неверный идентификатор' });
-    return true;
-  }
-  return false;
-}
 
 function formatLesson(l) {
   const slot = l.schedule_slot_id;
@@ -104,7 +98,7 @@ router.get('/', async (req, res) => {
 
     res.json(lessons.map(formatLesson));
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -129,7 +123,7 @@ router.put('/:id', async (req, res) => {
     const populated = await getLessonsPopulated({ _id: lesson._id });
     res.json(populated.length ? formatLesson(populated[0]) : { success: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -164,7 +158,7 @@ router.put('/:id/complete', async (req, res) => {
 
     res.json({ success: true, message: 'Занятие отмечено как проведенное' });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -187,7 +181,7 @@ router.put('/:id/cancel', async (req, res) => {
 
     res.json({ success: true, message: 'Занятие отменено' });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -226,7 +220,7 @@ router.post('/:id/substitute', async (req, res) => {
 
     res.json({ success: true, message: 'Замена назначена' });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -242,14 +236,13 @@ router.delete('/:id', async (req, res) => {
     if (!lesson) return res.status(404).json({ error: 'Занятие не найдено' });
 
     // Удаляем связанные записи посещаемости и замены
-    const Attendance = require('../models/Attendance');
     await Attendance.deleteMany({ lesson_id: lesson._id });
     await Substitution.deleteMany({ lesson_id: lesson._id });
     await Lesson.findByIdAndDelete(req.params.id);
 
     res.json({ success: true, message: 'Занятие удалено' });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 

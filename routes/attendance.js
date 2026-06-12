@@ -4,6 +4,7 @@ const Attendance = require('../models/Attendance');
 const KindergartenChild = require('../models/KindergartenChild');
 const Lesson = require('../models/Lesson');
 const { authMiddleware } = require('../middleware/auth');
+const { badId, escapeRegex, serverError } = require('../utils/http');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -14,14 +15,6 @@ const DAY_NAMES = ['', 'Понедельник', 'Вторник', 'Среда',
 /** Нормализует время из формата HTML input ("09:00") в формат CSV ("9:00") */
 function normalizeTime(time) {
   return (time || '').replace(/^0(\d)/, '$1');
-}
-
-function badId(res, id) {
-  if (!mongoose.isValidObjectId(id)) {
-    res.status(400).json({ error: 'Неверный идентификатор' });
-    return true;
-  }
-  return false;
 }
 
 /**
@@ -98,7 +91,7 @@ router.get('/:lessonId', async (req, res) => {
       present_count: result.filter(r => r.present).length
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -137,15 +130,17 @@ router.put('/:lessonId', async (req, res) => {
       child_id: { $nin: keepIds }
     });
 
-    // Upsert каждую отметку из переданного списка
-    for (const m of marks) {
-      if (!m.child_id || !mongoose.isValidObjectId(m.child_id)) continue;
-      await Attendance.findOneAndUpdate(
-        { lesson_id: req.params.lessonId, child_id: m.child_id },
-        { present: !!m.present },
-        { upsert: true, new: true }
-      );
-    }
+    // Upsert все отметки одним bulkWrite (вместо запроса на каждого ребёнка)
+    const ops = marks
+      .filter(m => m.child_id && mongoose.isValidObjectId(m.child_id))
+      .map(m => ({
+        updateOne: {
+          filter: { lesson_id: req.params.lessonId, child_id: m.child_id },
+          update: { $set: { present: !!m.present } },
+          upsert: true
+        }
+      }));
+    if (ops.length) await Attendance.bulkWrite(ops);
 
     // Обновляем children_count в занятии
     const presentCount = await Attendance.countDocuments({
@@ -168,7 +163,7 @@ router.put('/:lessonId', async (req, res) => {
       lesson_status: lesson.status
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
@@ -202,7 +197,7 @@ router.post('/:lessonId/child', async (req, res) => {
     // Не плодим дубли: если ребёнок с таким именем уже есть в садике — используем его
     let child = await KindergartenChild.findOne({
       company_id: company._id,
-      full_name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
+      full_name: { $regex: `^${escapeRegex(name)}$`, $options: 'i' },
       active: true
     });
 
@@ -228,7 +223,7 @@ router.post('/:lessonId/child', async (req, res) => {
       present: true
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 

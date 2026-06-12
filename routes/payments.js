@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const Lesson = require('../models/Lesson');
 const TeacherRate = require('../models/TeacherRate');
 const { authMiddleware } = require('../middleware/auth');
+const { serverError } = require('../utils/http');
 const { calculateClientPayment, calculateTeacherPayment } = require('../utils/payment');
 
 const router = express.Router();
@@ -48,8 +49,9 @@ router.get('/calculate', async (req, res) => {
     // Убрать занятия без расписания (удалённые слоты)
     lessons = lessons.filter(l => l.schedule_slot_id && l.schedule_slot_id.company_id);
 
-    // Загрузить все ставки учителей
-    const allRates = await TeacherRate.find({}).lean();
+    // Ставки только тех учителей, что встречаются в выборке
+    const teacherIds = [...new Set(lessons.map(l => l.actual_teacher_id && l.actual_teacher_id._id.toString()).filter(Boolean))];
+    const allRates = await TeacherRate.find({ teacher_id: { $in: teacherIds } }).lean();
     const rateMap = {};
     for (const r of allRates) {
       rateMap[`${r.teacher_id.toString()}_${r.company_id.toString()}`] = r.rate;
@@ -170,7 +172,7 @@ router.get('/calculate', async (req, res) => {
       details: paymentDetails
     });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    serverError(res, e);
   }
 });
 
