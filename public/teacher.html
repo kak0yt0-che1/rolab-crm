@@ -181,7 +181,7 @@
             </div>
             <div class="form-group">
               <label>Новый пароль *</label>
-              <input type="password" id="new-password" placeholder="Минимум 4 символа">
+              <input type="password" id="new-password" placeholder="Минимум 6 символов">
             </div>
           </div>
           <button class="btn btn-primary btn-lg mt-16" onclick="changePassword()">Сменить пароль</button>
@@ -232,8 +232,8 @@
     </div>
   </div>
 
-  <!-- MODAL: Substitution -->
-  <div class="modal-overlay" id="modal-sub">
+  <!-- MODAL: Substitution (второй уровень — открывается поверх модалки занятия/посещаемости) -->
+  <div class="modal-overlay modal-overlay-top" id="modal-sub">
     <div class="modal" style="max-width:480px;">
       <div class="modal-header">
         <h3>Назначить замену</h3>
@@ -355,23 +355,23 @@
       <div class="modal-body">
         <input type="hidden" id="attendance-lesson-id">
         <div id="attendance-info" class="mb-16"></div>
-        <div class="card" style="max-height:400px;overflow-y:auto;">
+        <div class="card attendance-list">
           <div class="card-body no-pad">
-            <table>
+            <table class="attendance-table">
               <thead>
                 <tr>
-                  <th style="width:50px;">✓</th>
+                  <th>✓</th>
                   <th>ФИО</th>
                   <th>Статус</th>
-                  <th style="width:50px;"></th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody id="attendance-body"></tbody>
             </table>
           </div>
         </div>
-        <div class="form-row mt-16" style="align-items:flex-end;">
-          <div class="form-group" style="flex:1;">
+        <div class="form-row-inline mt-16">
+          <div class="form-group grow">
             <label>Добавить из списка садика</label>
             <select id="attendance-add-select"><option value="">— выберите —</option></select>
           </div>
@@ -379,8 +379,8 @@
             <button class="btn btn-outline" onclick="addChildToAttendance()">+ Добавить</button>
           </div>
         </div>
-        <div class="form-row" style="align-items:flex-end;">
-          <div class="form-group" style="flex:1;">
+        <div class="form-row-inline">
+          <div class="form-group grow">
             <label>Новый ребёнок (ФИО)</label>
             <input type="text" id="attendance-new-child" placeholder="Создать и добавить в список">
           </div>
@@ -392,9 +392,9 @@
           <label>Заметки</label>
           <textarea id="attendance-notes" placeholder="Комментарий к занятию..."></textarea>
         </div>
-        <div class="mt-16" id="attendance-summary" style="font-weight:600;color:var(--primary);"></div>
       </div>
       <div class="modal-footer">
+        <div id="attendance-summary" style="font-weight:600;color:var(--primary);margin-right:auto;"></div>
         <button class="btn btn-outline" onclick="closeModal('modal-attendance')">Закрыть</button>
         <button class="btn btn-danger" onclick="cancelLessonFromAttendance()">Отменить</button>
         <button class="btn btn-warning" onclick="openSubFromAttendance()">Замена</button>
@@ -443,6 +443,14 @@
     function closeModal(id) { document.getElementById(id).classList.remove('show'); }
     document.querySelectorAll('.modal-overlay').forEach(o => {
       o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); });
+    });
+    // Escape закрывает верхнюю модалку (второй уровень — раньше первого)
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Escape') return;
+      const open = Array.from(document.querySelectorAll('.modal-overlay.show'));
+      if (!open.length) return;
+      const top = open.find(o => o.classList.contains('modal-overlay-top')) || open[open.length - 1];
+      top.classList.remove('show');
     });
 
     // ============================================================
@@ -952,8 +960,8 @@
         alertDiv.innerHTML = '<div class="alert alert-danger">Заполните оба поля</div>';
         return;
       }
-      if (newPwd.length < 4) {
-        alertDiv.innerHTML = '<div class="alert alert-danger">Новый пароль минимум 4 символа</div>';
+      if (newPwd.length < 6) {
+        alertDiv.innerHTML = '<div class="alert alert-danger">Новый пароль минимум 6 символов</div>';
         return;
       }
       try {

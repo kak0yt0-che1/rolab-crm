@@ -438,27 +438,38 @@ tr:hover {
    MODAL
    ============================================================ */
 
+/* Иерархия слоёв: оверлей 1000, второй уровень (модалка поверх модалки) 1020,
+   выпадающие элементы внутри модалок — 1030 */
 .modal-overlay {
   display: none;
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.4);
-  z-index: 200;
+  z-index: 1000;
   align-items: center;
   justify-content: center;
+  padding: 16px;
 }
 
 .modal-overlay.show {
   display: flex;
 }
 
+/* Модалка второго уровня (например «Назначить замену» поверх отметки посещаемости) */
+.modal-overlay.modal-overlay-top {
+  z-index: 1020;
+  background: rgba(0,0,0,0.5);
+}
+
 .modal {
   background: white;
   border-radius: 8px;
   width: 560px;
-  max-width: 95vw;
+  max-width: 100%;
   max-height: 90vh;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   box-shadow: 0 8px 30px rgba(0,0,0,0.2);
 }
 
@@ -468,6 +479,7 @@ tr:hover {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .modal-header h3 {
@@ -483,8 +495,12 @@ tr:hover {
   padding: 4px 8px;
 }
 
+/* Скроллится только тело модалки — шапка и кнопки всегда видны */
 .modal-body {
   padding: 20px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .modal-footer {
@@ -492,7 +508,60 @@ tr:hover {
   border-top: 1px solid var(--border);
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  background: white;
+}
+
+/* Строка «поле + кнопка»: поле растягивается, кнопка фиксированная */
+.form-row-inline {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.form-row-inline .form-group {
+  margin-bottom: 16px;
+}
+
+.form-row-inline .form-group.grow {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+/* Таблица списка детей в модалке посещаемости */
+.attendance-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.attendance-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.attendance-table th:nth-child(1),
+.attendance-table td:nth-child(1) {
+  width: 40px;
+  text-align: center;
+}
+
+.attendance-table th:nth-child(3),
+.attendance-table td:nth-child(3) {
+  width: 100px;
+}
+
+.attendance-table th:nth-child(4),
+.attendance-table td:nth-child(4) {
+  width: 60px;
+  text-align: center;
+}
+
+.attendance-table td:nth-child(2) {
+  word-break: break-word;
 }
 
 /* ============================================================
@@ -645,8 +714,15 @@ tr:hover {
   }
 
   .modal {
-    width: 95vw;
-    margin: 10px;
+    width: 100%;
+  }
+
+  .modal-overlay {
+    padding: 8px;
+  }
+
+  .modal-footer .btn {
+    flex: 1 1 auto;
   }
 }
 
@@ -668,7 +744,8 @@ tr:hover {
   accent-color: var(--primary);
 }
 
-/* Attendance row highlight */
-tr:has(.attendance-check:checked) {
+/* Attendance row highlight (admin использует .attendance-check, teacher — .att-check) */
+tr:has(.attendance-check:checked),
+tr:has(.att-check:checked) {
   background: var(--success-bg) !important;
 }

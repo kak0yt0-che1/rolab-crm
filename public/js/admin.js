@@ -69,6 +69,15 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
   });
 });
 
+// Escape закрывает верхнюю модалку (второй уровень — раньше первого)
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const open = Array.from(document.querySelectorAll('.modal-overlay.show'));
+  if (!open.length) return;
+  const top = open.find(o => o.classList.contains('modal-overlay-top')) || open[open.length - 1];
+  top.classList.remove('show');
+});
+
 // ============================================================
 // CACHED DATA
 // ============================================================

@@ -197,7 +197,7 @@ router.post('/:lessonId/child', async (req, res) => {
     // Не плодим дубли: если ребёнок с таким именем уже есть в садике — используем его
     let child = await KindergartenChild.findOne({
       company_id: company._id,
-      full_name: { $regex: `^${escapeRegex(name)}$`, $options: 'i' },
+      full_name: { $regex: `^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
       active: true
     });
 
