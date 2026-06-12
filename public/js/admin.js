@@ -657,8 +657,7 @@ async function loadLessons() {
           <td>${l.status === 'completed' ? l.children_count : '—'}</td>
           <td>
             <div class="btn-group">
-              ${l.company_type === 'kindergarten' ? `<button class="btn btn-sm btn-success" onclick="openAttendanceModal('${l.id}')">✅ Список</button>` : ''}
-              <button class="btn btn-sm btn-outline" onclick="openLessonModal('${l.id}')">Открыть</button>
+              <button class="btn btn-sm btn-outline" onclick="${l.company_type === 'kindergarten' ? `openAttendanceModal('${l.id}')` : `openLessonModal('${l.id}')`}">Открыть</button>
               <button class="btn btn-sm btn-danger" onclick="deleteLesson('${l.id}')">Удалить</button>
             </div>
           </td>
@@ -914,8 +913,8 @@ async function loadAttendanceReport(dateFrom, dateTo, companyId, teacherId) {
   }
 }
 
-// Экспорт счёта клиенту в Excel (садик — дети×даты, школа — занятия×даты).
-// Ставка учителя в выгрузку не попадает.
+// Экспорт счёта клиенту в PDF (через печать браузера → «Сохранить как PDF»).
+// Садик — дети×даты, школа — занятия×даты. Ставка учителя в выгрузку не попадает.
 async function exportClientTable() {
   const dateFrom = document.getElementById('reports-date-from').value;
   const dateTo = document.getElementById('reports-date-to').value;
@@ -923,52 +922,83 @@ async function exportClientTable() {
 
   if (!dateFrom || !dateTo) { alert('Укажите период'); return; }
   if (!companyId) { alert('Выберите компанию в фильтре «Компания»'); return; }
-  if (typeof XLSX === 'undefined') { alert('Библиотека Excel не загрузилась'); return; }
 
   try {
     const data = await API.get(`/reports/export-data?company_id=${companyId}&date_from=${dateFrom}&date_to=${dateTo}`);
-    const shortDate = d => {
-      const dd = new Date(d + 'T00:00:00');
-      return dd.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
-    };
+    const html = buildClientInvoiceHtml(data);
 
-    const aoa = [];
-    aoa.push([`Компания: ${data.company_name}`]);
-    aoa.push([`Период: ${formatDate(data.date_from)} — ${formatDate(data.date_to)}`]);
-    aoa.push([]);
-
-    if (data.company_type === 'kindergarten') {
-      const header = ['№', 'ФИО', ...data.dates.map(shortDate), 'Посещений'];
-      aoa.push(header);
-      (data.children || []).forEach((c, i) => {
-        const row = [i + 1, c.full_name];
-        data.dates.forEach(d => {
-          const p = c.attendance[d];
-          row.push(p === true ? '+' : (p === false ? '−' : ''));
-        });
-        row.push(c.total_present);
-        aoa.push(row);
-      });
-      if (!data.children || !data.children.length) aoa.push(['', 'Нет данных за период']);
-    } else {
-      aoa.push(['Дата', 'Группа', 'Время', 'Детей', 'Сумма (₸)']);
-      (data.lessons || []).forEach(l => {
-        aoa.push([formatDate(l.date), l.group_name || '', formatTimeRange(l.time_start, l.time_end), l.children_count, l.client_payment]);
-      });
-      if (!data.lessons || !data.lessons.length) aoa.push(['Нет данных за период']);
-    }
-
-    aoa.push([]);
-    aoa.push(['', 'ИТОГО К ОПЛАТЕ КЛИЕНТОМ:', data.client_total + ' ₸']);
-
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Счёт');
-    const safeName = (data.company_name || 'export').replace(/[^\wа-яА-ЯёЁ\- ]/g, '').slice(0, 40);
-    XLSX.writeFile(wb, `Счёт_${safeName}_${data.date_from}_${data.date_to}.xlsx`);
+    const w = window.open('', '_blank');
+    if (!w) { alert('Разрешите всплывающие окна, чтобы сформировать PDF'); return; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    // Печать (в диалоге выбрать «Сохранить как PDF»)
+    w.onload = () => { w.focus(); w.print(); };
   } catch (e) {
     alert(e.message);
   }
+}
+
+function buildClientInvoiceHtml(data) {
+  const shortDate = d => {
+    const dd = new Date(d + 'T00:00:00');
+    return dd.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+  };
+  const typeLabel = data.company_type === 'kindergarten' ? 'Садик' : 'Школа';
+
+  let tableHtml = '';
+  if (data.company_type === 'kindergarten') {
+    const head = `<th>№</th><th class="name">ФИО</th>${data.dates.map(d => `<th class="day">${shortDate(d)}</th>`).join('')}<th>Посещений</th>`;
+    const rows = (data.children || []).map((c, i) => {
+      const cells = data.dates.map(d => {
+        const p = c.attendance[d];
+        if (p === true) return '<td class="mark yes">✓</td>';
+        if (p === false) return '<td class="mark no">×</td>';
+        return '<td class="mark">·</td>';
+      }).join('');
+      return `<tr><td>${i + 1}</td><td class="name">${escHtml(c.full_name)}</td>${cells}<td class="total">${c.total_present}</td></tr>`;
+    }).join('');
+    const body = rows || `<tr><td colspan="${data.dates.length + 3}" class="empty">Нет данных за период</td></tr>`;
+    tableHtml = `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  } else {
+    const rows = (data.lessons || []).map(l => `
+      <tr>
+        <td>${formatDate(l.date)}</td>
+        <td>${escHtml(l.group_name) || '—'}</td>
+        <td>${formatTimeRange(l.time_start, l.time_end)}</td>
+        <td class="total">${l.children_count}</td>
+        <td class="total">${formatMoney(l.client_payment)}</td>
+      </tr>`).join('');
+    const body = rows || '<tr><td colspan="5" class="empty">Нет данных за период</td></tr>';
+    tableHtml = `<table><thead><tr><th>Дата</th><th>Группа</th><th>Время</th><th>Детей</th><th>Сумма</th></tr></thead><tbody>${body}</tbody></table>`;
+  }
+
+  return `<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8">
+<title>Счёт — ${escHtml(data.company_name)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; padding: 24px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .meta { color: #475569; font-size: 13px; margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center; }
+  th { background: #f1f5f9; }
+  td.name, th.name { text-align: left; white-space: nowrap; }
+  td.mark { font-weight: 700; }
+  td.mark.yes { color: #16a34a; }
+  td.mark.no { color: #dc2626; }
+  td.total { font-weight: 700; }
+  td.empty { color: #94a3b8; font-style: italic; }
+  .grand { margin-top: 20px; text-align: right; font-size: 16px; font-weight: 700; }
+  .grand span { color: #2563eb; }
+  @media print { body { padding: 0; } }
+</style></head>
+<body>
+  <h1>Счёт к оплате — ${escHtml(data.company_name)}</h1>
+  <div class="meta">${typeLabel} • Период: ${formatDate(data.date_from)} — ${formatDate(data.date_to)}</div>
+  ${tableHtml}
+  <div class="grand">Итого к оплате клиентом: <span>${formatMoney(data.client_total)}</span></div>
+</body></html>`;
 }
 
 // ============================================================
@@ -1389,6 +1419,16 @@ async function openAttendanceModal(lessonId) {
     const newChildEl = document.getElementById('attendance-new-child');
     if (newChildEl) newChildEl.value = '';
 
+    // Список педагогов для замены
+    const subSel = document.getElementById('attendance-substitute-teacher');
+    if (subSel) {
+      if (!allTeachers.length) await loadFilterOptions();
+      subSel.innerHTML = '<option value="">— не менять —</option>' +
+        allTeachers.map(t => `<option value="${t.id}">${escHtml(t.full_name)}</option>`).join('');
+      const reasonEl = document.getElementById('attendance-substitute-reason');
+      if (reasonEl) reasonEl.value = '';
+    }
+
     updateAttendanceSummary();
     openModal('modal-attendance');
   } catch (e) {
@@ -1427,6 +1467,22 @@ async function cancelLessonFromAttendance() {
   if (!confirm('Отменить занятие?')) return;
   try {
     await API.put(`/lessons/${lessonId}/cancel`, { notes });
+    closeModal('modal-attendance');
+    if (currentPage === 'lessons') loadLessons();
+    if (currentPage === 'dashboard') loadDashboard();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function doSubstituteFromAttendance() {
+  const lessonId = document.getElementById('attendance-lesson-id').value;
+  const substituteId = document.getElementById('attendance-substitute-teacher').value;
+  const reason = document.getElementById('attendance-substitute-reason').value.trim();
+  if (!substituteId) { alert('Выберите заменяющего педагога'); return; }
+  try {
+    await API.post(`/lessons/${lessonId}/substitute`, { substitute_teacher_id: substituteId, reason });
+    alert('Замена назначена');
     closeModal('modal-attendance');
     if (currentPage === 'lessons') loadLessons();
     if (currentPage === 'dashboard') loadDashboard();

@@ -302,7 +302,7 @@
         </div>
         <div class="form-group" style="display:flex;align-items:flex-end;gap:8px;">
           <button class="btn btn-primary" onclick="loadReports()">Показать</button>
-          <button class="btn btn-outline" onclick="exportClientTable()">📥 Экспорт счёта (Excel)</button>
+          <button class="btn btn-outline" onclick="exportClientTable()">📄 Экспорт счёта (PDF)</button>
         </div>
       </div>
 
@@ -915,6 +915,19 @@
         <div class="form-group mt-16">
           <label>Заметки</label>
           <textarea id="attendance-notes" placeholder="Комментарий к занятию..."></textarea>
+        </div>
+        <div class="form-row" style="align-items:flex-end;">
+          <div class="form-group" style="flex:1;">
+            <label>Замена педагога</label>
+            <select id="attendance-substitute-teacher"><option value="">— не менять —</option></select>
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>Причина</label>
+            <input type="text" id="attendance-substitute-reason" placeholder="Болезнь, отпуск...">
+          </div>
+          <div class="form-group">
+            <button class="btn btn-outline" onclick="doSubstituteFromAttendance()">Назначить</button>
+          </div>
         </div>
         <div class="mt-16" id="attendance-summary" style="font-weight:600;color:var(--primary);"></div>
       </div>
