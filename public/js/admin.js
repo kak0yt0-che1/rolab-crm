@@ -957,18 +957,44 @@ function buildClientInvoiceHtml(data) {
 
   let tableHtml = '';
   if (data.company_type === 'kindergarten') {
-    const head = `<th>№</th><th class="name">ФИО</th>${data.dates.map(d => `<th class="day">${shortDate(d)}</th>`).join('')}<th>Посещений</th>`;
-    const rows = (data.children || []).map((c, i) => {
-      const cells = data.dates.map(d => {
-        const p = c.attendance[d];
-        if (p === true) return '<td class="mark yes">✓</td>';
-        if (p === false) return '<td class="mark no">×</td>';
-        return '<td class="mark">·</td>';
+    const groups = data.groups || [];
+    if (groups.length === 0) {
+      tableHtml = `<div class="empty">Нет данных за период</div>`;
+    } else {
+      // Рендерим таблицу для каждой группы (слота)
+      const groupTables = groups.map(group => {
+        const timeLabel = `${group.time_start || '?'}–${group.time_end || '?'}`;
+        const head = `<th>№</th><th class="name">ФИО</th>${data.dates.map(d => `<th class="day">${shortDate(d)}</th>`).join('')}<th>Посещений</th>`;
+
+        const rows = (group.children || []).map((c, i) => {
+          const cells = data.dates.map(d => {
+            const p = c.attendance[d];
+            if (p === true) return '<td class="mark yes">✓</td>';
+            if (p === false) return '<td class="mark no">×</td>';
+            return '<td class="mark">·</td>';
+          }).join('');
+          return `<tr><td>${i + 1}</td><td class="name">${escHtml(c.full_name)}</td>${cells}<td class="total">${c.total_present}</td></tr>`;
+        }).join('');
+
+        // Строка «Всего:» по датам
+        const totalCells = data.dates.map(d => {
+          const cnt = (group.totals_per_date || {})[d] || 0;
+          return `<td class="total">${cnt || ''}</td>`;
+        }).join('');
+        const totalsRow = `<tr class="totals-row"><td></td><td class="name"><strong>Всего:</strong></td>${totalCells}<td class="total">${group.subtotal}</td></tr>`;
+
+        const body = rows
+          ? rows + totalsRow
+          : `<tr><td colspan="${data.dates.length + 3}" class="empty">Нет данных</td></tr>`;
+
+        return `<div class="group-block">
+          <div class="group-title">${timeLabel}</div>
+          <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
+        </div>`;
       }).join('');
-      return `<tr><td>${i + 1}</td><td class="name">${escHtml(c.full_name)}</td>${cells}<td class="total">${c.total_present}</td></tr>`;
-    }).join('');
-    const body = rows || `<tr><td colspan="${data.dates.length + 3}" class="empty">Нет данных за период</td></tr>`;
-    tableHtml = `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+
+      tableHtml = groupTables;
+    }
   } else {
     const rows = (data.lessons || []).map(l => `
       <tr>
@@ -982,6 +1008,10 @@ function buildClientInvoiceHtml(data) {
     tableHtml = `<table><thead><tr><th>Дата</th><th>Группа</th><th>Время</th><th>Детей</th><th>Сумма</th></tr></thead><tbody>${body}</tbody></table>`;
   }
 
+  const totalPresentHtml = data.total_present !== undefined
+    ? `<div class="grand-secondary">Итого посещений: <span>${data.total_present}</span></div>`
+    : '';
+
   return `<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8">
 <title>Счёт — ${escHtml(data.company_name)}</title>
 <style>
@@ -989,7 +1019,7 @@ function buildClientInvoiceHtml(data) {
   body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; padding: 24px; }
   h1 { font-size: 20px; margin: 0 0 4px; }
   .meta { color: #475569; font-size: 13px; margin-bottom: 16px; }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 4px; }
   th, td { border: 1px solid #cbd5e1; padding: 4px 6px; text-align: center; }
   th { background: #f1f5f9; }
   td.name, th.name { text-align: left; white-space: nowrap; }
@@ -998,14 +1028,20 @@ function buildClientInvoiceHtml(data) {
   td.mark.no { color: #dc2626; }
   td.total { font-weight: 700; }
   td.empty { color: #94a3b8; font-style: italic; }
+  .group-block { margin-bottom: 20px; }
+  .group-title { font-size: 14px; font-weight: 700; margin-bottom: 6px; color: #334155; }
+  .totals-row td { background: #f8fafc; border-top: 2px solid #94a3b8; }
   .grand { margin-top: 20px; text-align: right; font-size: 16px; font-weight: 700; }
   .grand span { color: #2563eb; }
+  .grand-secondary { text-align: right; font-size: 14px; font-weight: 600; color: #475569; margin-top: 8px; }
+  .grand-secondary span { color: #1e293b; }
   @media print { body { padding: 0; } }
 </style></head>
 <body>
   <h1>Счёт к оплате — ${escHtml(data.company_name)}</h1>
   <div class="meta">${typeLabel} • Период: ${formatDate(data.date_from)} — ${formatDate(data.date_to)}</div>
   ${tableHtml}
+  ${totalPresentHtml}
   <div class="grand">Итого к оплате клиентом: <span>${formatMoney(data.client_total)}</span></div>
 </body></html>`;
 }

@@ -244,7 +244,8 @@ router.get('/attendance', async (req, res) => {
 });
 
 // GET /api/reports/export-data — данные для экспорта счёта клиенту (только админ).
-// Садик: дети × даты с посещаемостью. Школа: занятия × даты + кол-во.
+// Садик: дети × даты с посещаемостью, разбивка по группам (слотам).
+// Школа: занятия × даты + кол-во.
 // Внизу — итоговая сумма к оплате клиентом. Ставка учителя НЕ включается.
 router.get('/export-data', adminOnly, async (req, res) => {
   try {
@@ -275,12 +276,6 @@ router.get('/export-data', adminOnly, async (req, res) => {
 
     const clientRate = (company.client_rate === undefined) ? null : company.client_rate;
 
-    // Итоговая сумма к оплате клиентом
-    let clientTotal = 0;
-    for (const l of lessons) {
-      clientTotal += calculateClientPayment(company.type, l.children_count || 0, clientRate);
-    }
-
     const dates = Array.from(new Set(lessons.map(l => l.date))).sort();
 
     const base = {
@@ -289,44 +284,122 @@ router.get('/export-data', adminOnly, async (req, res) => {
       company_type: company.type,
       date_from,
       date_to,
-      dates,
-      client_total: clientTotal
+      dates
     };
 
     if (company.type === 'kindergarten') {
-      // Матрица дети × даты
-      const lessonIds = lessons.map(l => l._id);
-      const lessonDateMap = {};
-      lessons.forEach(l => { lessonDateMap[l._id.toString()] = l.date; });
-
-      const marks = await Attendance.find({ lesson_id: { $in: lessonIds } }).lean();
-      const childAttendance = {};
-      const childIds = new Set();
-      for (const m of marks) {
-        const cid = m.child_id.toString();
-        const date = lessonDateMap[m.lesson_id.toString()];
-        if (!date) continue;
-        childIds.add(cid);
-        if (!childAttendance[cid]) childAttendance[cid] = {};
-        childAttendance[cid][date] = childAttendance[cid][date] || !!m.present;
+      // --- Садик: разбивка по группам (слотам) ---
+      // Группируем занятия по schedule_slot_id
+      const slotMap = {};
+      for (const l of lessons) {
+        const slotId = l.schedule_slot_id._id.toString();
+        if (!slotMap[slotId]) {
+          slotMap[slotId] = {
+            slot_id: slotId,
+            time_start: l.schedule_slot_id.time_start,
+            time_end: l.schedule_slot_id.time_end,
+            group_name: l.schedule_slot_id.group_name || '',
+            lessons: []
+          };
+        }
+        slotMap[slotId].lessons.push(l);
       }
 
-      const children = await KindergartenChild.find({ _id: { $in: Array.from(childIds) } })
-        .sort({ full_name: 1 }).lean();
+      // Все отметки по всем занятиям периода
+      const allLessonIds = lessons.map(l => l._id);
+      const allMarks = await Attendance.find({ lesson_id: { $in: allLessonIds } }).lean();
 
-      base.children = children.map(c => {
-        const cid = c._id.toString();
-        const att = childAttendance[cid] || {};
-        const totalPresent = dates.reduce((s, d) => s + (att[d] ? 1 : 0), 0);
-        return {
-          full_name: c.full_name,
-          status: c.status,
-          attendance: att,
-          total_present: totalPresent
+      // Маппинг lesson_id -> { date, slot_id }
+      const lessonInfoMap = {};
+      lessons.forEach(l => {
+        lessonInfoMap[l._id.toString()] = {
+          date: l.date,
+          slot_id: l.schedule_slot_id._id.toString()
         };
       });
+
+      // Строим посещаемость по слотам: slot_id -> child_id -> date -> present
+      const slotAttendance = {};
+      const slotChildIds = {};
+      for (const m of allMarks) {
+        const info = lessonInfoMap[m.lesson_id.toString()];
+        if (!info) continue;
+        const { date, slot_id } = info;
+        const cid = m.child_id.toString();
+
+        if (!slotAttendance[slot_id]) slotAttendance[slot_id] = {};
+        if (!slotAttendance[slot_id][cid]) slotAttendance[slot_id][cid] = {};
+        // Если несколько занятий одного слота в одну дату — OR
+        slotAttendance[slot_id][cid][date] = slotAttendance[slot_id][cid][date] || !!m.present;
+
+        if (!slotChildIds[slot_id]) slotChildIds[slot_id] = new Set();
+        slotChildIds[slot_id].add(cid);
+      }
+
+      // Загружаем данные всех детей
+      const allChildIdsSet = new Set();
+      Object.values(slotChildIds).forEach(s => s.forEach(id => allChildIdsSet.add(id)));
+      const allChildren = await KindergartenChild.find({ _id: { $in: Array.from(allChildIdsSet) } })
+        .sort({ full_name: 1 }).lean();
+      const childMap = {};
+      allChildren.forEach(c => { childMap[c._id.toString()] = c; });
+
+      // Собираем группы и считаем итого
+      let totalPresent = 0;
+      const groups = Object.values(slotMap)
+        .sort((a, b) => (a.time_start || '').localeCompare(b.time_start || ''))
+        .map(slot => {
+          const att = slotAttendance[slot.slot_id] || {};
+          const cids = slotChildIds[slot.slot_id] ? Array.from(slotChildIds[slot.slot_id]) : [];
+
+          // Сортируем детей по ФИО
+          const sortedCids = cids
+            .filter(cid => childMap[cid])
+            .sort((a, b) => (childMap[a].full_name || '').localeCompare(childMap[b].full_name || ''));
+
+          let groupTotal = 0;
+          const children = sortedCids.map(cid => {
+            const child = childMap[cid];
+            const childAtt = att[cid] || {};
+            const present = dates.reduce((s, d) => s + (childAtt[d] ? 1 : 0), 0);
+            groupTotal += present;
+            return {
+              full_name: child.full_name,
+              status: child.status,
+              attendance: childAtt,
+              total_present: present
+            };
+          });
+
+          // Всего по дате для этой группы
+          const totals_per_date = {};
+          for (const d of dates) {
+            totals_per_date[d] = sortedCids.reduce((s, cid) => s + ((att[cid] || {})[d] ? 1 : 0), 0);
+          }
+
+          totalPresent += groupTotal;
+
+          return {
+            time_start: slot.time_start,
+            time_end: slot.time_end,
+            group_name: slot.group_name,
+            children,
+            totals_per_date,
+            subtotal: groupTotal
+          };
+        });
+
+      // client_total считается по реальным посещениям
+      base.groups = groups;
+      base.total_present = totalPresent;
+      base.client_total = calculateClientPayment(company.type, totalPresent, clientRate);
     } else {
       // Школа: список занятий по датам (без поимённых детей)
+      let clientTotal = 0;
+      for (const l of lessons) {
+        clientTotal += calculateClientPayment(company.type, l.children_count || 0, clientRate);
+      }
+      base.client_total = clientTotal;
       base.lessons = lessons
         .map(l => ({
           date: l.date,
