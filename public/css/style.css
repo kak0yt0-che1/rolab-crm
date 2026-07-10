@@ -331,6 +331,30 @@ textarea {
   flex-wrap: wrap;
 }
 
+.btn-logout {
+  background: #ef4444;
+  color: #fff !important;
+  border-color: #ef4444;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.3);
+}
+
+.btn-logout:hover:not(:disabled) {
+  background: #dc2626;
+  border-color: #dc2626;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.4);
+}
+
+.btn-warning {
+  background: var(--warning);
+  color: #fff;
+}
+
+.btn-warning:hover:not(:disabled) {
+  background: #d97706;
+}
+
 /* ============================================================
    TABLES
    ============================================================ */
