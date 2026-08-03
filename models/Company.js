@@ -7,8 +7,13 @@ const schema = new mongoose.Schema({
   contact_person: { type: String, default: '', trim: true },
   phone: { type: String, default: '', trim: true },
   // Ставка клиента (сколько организация платит центру).
-  // Садик — за каждого ребёнка; школа — за занятие. null = откат на формулу по умолчанию.
+  // individual — за каждого ребёнка; organization — фикс за занятие. null = откат на формулу.
   client_rate: { type: Number, default: null },
+  // Тип оплаты клиентом:
+  //   organization — платит сама организация (фикс за занятие)
+  //   individual   — платят родители (за каждого ребёнка)
+  // Старые записи без поля → расчёт падает на эвристику по type (садик/школа).
+  payment_type: { type: String, enum: ['organization', 'individual'], default: 'individual' },
   active: { type: Boolean, default: true },
   created_at: { type: Date, default: Date.now }
 });

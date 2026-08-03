@@ -6,30 +6,46 @@
   <title>ROLAB — Админка</title>
   <link rel="stylesheet" href="/css/style.css">
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <!-- UX 1: searchable-селекты (дефолтная тема — не зависит от Bootstrap-переменных) -->
+  <link href="https://cdn.jsdelivr.net/npm/tom-select@2/dist/css/tom-select.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/tom-select@2/dist/js/tom-select.complete.min.js"></script>
 </head>
 <body>
-  <!-- HEADER -->
-  <header class="app-header">
-    <div class="logo">ROLAB</div>
-    <div class="user-info">
-      <span id="header-user-name"></span>
-      <button class="btn btn-sm btn-logout" onclick="API.logout()">🚪 Выйти</button>
-    </div>
-  </header>
+  <div class="app-shell" id="app-shell">
+    <div class="sidebar-backdrop" onclick="toggleSidebar()"></div>
 
-  <!-- NAVIGATION -->
-  <nav class="app-nav" id="main-nav">
-    <a href="#dashboard" data-page="dashboard" class="active">Главная</a>
-    <a href="#companies" data-page="companies">Компании</a>
-    <a href="#teachers" data-page="teachers">Педагоги</a>
-    <a href="#schedule" data-page="schedule">Расписание</a>
-    <a href="#lessons" data-page="lessons">Занятия</a>
-    <a href="#reports" data-page="reports">Отчеты</a>
-    <a href="#payments" data-page="payments">Оплата</a>
-    <a href="#children" data-page="children">Дети (садики)</a>
-  </nav>
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-brand"><span class="brand-dot"></span> ROLAB</div>
+      <nav class="app-nav" id="main-nav">
+        <a href="#dashboard" data-page="dashboard" class="active"><span class="nav-ico">🏠</span> Главная</a>
+        <a href="#companies" data-page="companies"><span class="nav-ico">🏢</span> Компании</a>
+        <a href="#teachers" data-page="teachers"><span class="nav-ico">👥</span> Педагоги</a>
+        <a href="#schedule" data-page="schedule"><span class="nav-ico">📅</span> Расписание</a>
+        <a href="#lessons" data-page="lessons"><span class="nav-ico">📚</span> Занятия</a>
+        <a href="#reports" data-page="reports"><span class="nav-ico">📊</span> Отчёты</a>
+        <a href="#payments" data-page="payments"><span class="nav-ico">💰</span> Оплата</a>
+        <a href="#children" data-page="children"><span class="nav-ico">🧒</span> Дети (садики)</a>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="btn btn-logout" onclick="API.logout()">🚪 Выйти</button>
+      </div>
+    </aside>
 
-  <div class="main-content" id="main-content">
+    <!-- MAIN AREA -->
+    <div class="app-main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Меню">☰</button>
+          <span class="topbar-brand">ROLAB</span>
+        </div>
+        <div class="topbar-user">
+          <span id="header-user-name"></span>
+          <span class="avatar" id="header-avatar"></span>
+        </div>
+      </header>
+
+      <div class="main-content" id="main-content">
 
     <!-- ============================================================
          DASHBOARD
@@ -530,7 +546,9 @@
         </div>
       </div>
     </div>
-  </div>
+      </div><!-- /.main-content -->
+    </div><!-- /.app-main -->
+  </div><!-- /.app-shell -->
 
   <!-- ============================================================
        MODAL: Company
@@ -554,6 +572,13 @@
               <option value="school">Школа</option>
               <option value="kindergarten">Садик</option>
               <option value="masterclass">Мастер-класс</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Тип оплаты *</label>
+            <select id="company-payment-type">
+              <option value="individual">Родители (за ребёнка)</option>
+              <option value="organization">Организация (фикс за занятие)</option>
             </select>
           </div>
         </div>
@@ -687,17 +712,18 @@
         <div class="form-row">
           <div class="form-group">
             <label>Начало *</label>
-            <input type="time" id="slot-time-start">
+            <input type="time" id="slot-time-start" onblur="validateSlotTime()" onchange="validateSlotTime()">
           </div>
           <div class="form-group">
             <label>Конец *</label>
-            <input type="time" id="slot-time-end">
+            <input type="time" id="slot-time-end" onblur="validateSlotTime()" onchange="validateSlotTime()">
+            <div id="slot-time-error" class="field-error" style="display:none;color:var(--danger);font-size:12px;margin-top:4px;"></div>
           </div>
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-outline" onclick="closeModal('modal-slot')">Отмена</button>
-        <button class="btn btn-primary" onclick="saveSlot()">Сохранить</button>
+        <button class="btn btn-primary" id="slot-save-btn" onclick="saveSlot()">Сохранить</button>
       </div>
     </div>
   </div>
@@ -780,7 +806,40 @@
       <div class="modal-footer">
         <button class="btn btn-outline" onclick="closeModal('modal-lesson')">Закрыть</button>
         <button class="btn btn-danger" onclick="cancelLesson()">Отменить занятие</button>
-        <button class="btn btn-success" onclick="completeLesson()">Провести ✓</button>
+        <button class="btn btn-success" id="lesson-complete-btn" onclick="completeLesson()">Провести ✓</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL: Оплата родителями (ФУНКЦИЯ 2)
+       ============================================================ -->
+  <div class="modal-overlay" id="modal-payments">
+    <div class="modal" style="max-width:720px;">
+      <div class="modal-header">
+        <h3>Оплата родителями</h3>
+        <button class="modal-close" onclick="closeModal('modal-payments')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="payments-lesson-id">
+        <div id="payments-info" class="text-muted" style="margin-bottom:12px;"></div>
+        <div class="table-responsive-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Ребёнок</th>
+                <th style="width:120px;">Сумма (₸)</th>
+                <th style="width:130px;">Статус</th>
+                <th>Заметка</th>
+              </tr>
+            </thead>
+            <tbody id="payments-body"></tbody>
+          </table>
+        </div>
+        <div id="payments-totals" style="margin-top:12px;font-weight:600;"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('modal-payments')">Закрыть</button>
       </div>
     </div>
   </div>

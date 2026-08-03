@@ -68,6 +68,10 @@ router.post('/', async (req, res) => {
   if (day_of_week < 1 || day_of_week > 7) {
     return res.status(400).json({ error: 'День недели: от 1 (Пн) до 7 (Вс)' });
   }
+  // БАГ 7: конец слота должен быть позже начала
+  if (time_end <= time_start) {
+    return res.status(400).json({ error: 'Время окончания должно быть позже начала' });
+  }
 
   // Учитель не может добавить слот для другого учителя
   if (req.user.role === 'teacher' && effectiveTeacherId !== req.user.id) {
@@ -128,6 +132,11 @@ router.put('/:id', async (req, res) => {
     if (time_end !== undefined) slot.time_end = time_end;
     if (group_name !== undefined) slot.group_name = group_name;
     if (active !== undefined) slot.active = active;
+
+    // БАГ 7: проверяем итоговые значения времени (учитывая частичное обновление)
+    if (slot.time_end <= slot.time_start) {
+      return res.status(400).json({ error: 'Время окончания должно быть позже начала' });
+    }
 
     await slot.save();
 
@@ -199,7 +208,9 @@ router.post('/generate', async (req, res) => {
       }
     }
 
-    // ordered:false — дубликаты (занятие уже существует) пропускаются, остальные вставляются
+    // ordered:false — дубликаты (занятие уже существует) пропускаются, остальные вставляются.
+    // Идемпотентность обеспечена уникальным индексом Lesson { schedule_slot_id, date }.
+    // Мини-тест: повторный вызов с тем же периодом → created:0, skipped:<все>.
     let created = 0;
     if (docs.length) {
       try {
@@ -214,7 +225,12 @@ router.post('/generate', async (req, res) => {
       }
     }
 
-    res.json({ created, message: `Создано ${created} занятий` });
+    const skipped = docs.length - created;
+    res.json({
+      created,
+      skipped,
+      message: `Создано ${created} занятий` + (skipped ? `, пропущено ${skipped} (уже существуют)` : '')
+    });
   } catch (e) {
     serverError(res, e);
   }

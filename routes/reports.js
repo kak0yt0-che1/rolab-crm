@@ -4,6 +4,7 @@ const Lesson = require('../models/Lesson');
 const Substitution = require('../models/Substitution');
 const Attendance = require('../models/Attendance');
 const KindergartenChild = require('../models/KindergartenChild');
+const IndividualPayment = require('../models/IndividualPayment');
 const Company = require('../models/Company');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
 const { serverError } = require('../utils/http');
@@ -392,12 +393,19 @@ router.get('/export-data', adminOnly, async (req, res) => {
       // client_total считается по реальным посещениям
       base.groups = groups;
       base.total_present = totalPresent;
-      base.client_total = calculateClientPayment(company.type, totalPresent, clientRate);
+      base.client_total = calculateClientPayment(company.type, totalPresent, clientRate, company.payment_type);
+
+      // ФУНКЦИЯ 3: факт оплаты родителями за период (для payment_type === 'individual')
+      const paidRecords = await IndividualPayment
+        .find({ lesson_id: { $in: allLessonIds }, paid: true }).lean();
+      base.total_billed = base.client_total;
+      base.total_paid = paidRecords.reduce((s, p) => s + (p.amount || 0), 0);
+      base.debt = base.total_billed - base.total_paid;
     } else {
       // Школа: список занятий по датам (без поимённых детей)
       let clientTotal = 0;
       for (const l of lessons) {
-        clientTotal += calculateClientPayment(company.type, l.children_count || 0, clientRate);
+        clientTotal += calculateClientPayment(company.type, l.children_count || 0, clientRate, company.payment_type);
       }
       base.client_total = clientTotal;
       base.lessons = lessons
@@ -407,7 +415,7 @@ router.get('/export-data', adminOnly, async (req, res) => {
           time_start: l.schedule_slot_id.time_start,
           time_end: l.schedule_slot_id.time_end,
           children_count: l.children_count || 0,
-          client_payment: calculateClientPayment(company.type, l.children_count || 0, clientRate)
+          client_payment: calculateClientPayment(company.type, l.children_count || 0, clientRate, company.payment_type)
         }))
         .sort((a, b) => a.date.localeCompare(b.date));
     }

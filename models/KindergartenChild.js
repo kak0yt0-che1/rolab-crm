@@ -17,7 +17,10 @@ schema.index({ company_id: 1, schedule_day: 1, schedule_time: 1 });
 schema.set('toJSON', {
   transform(doc, ret) {
     ret.id = ret._id.toString();
-    ret.company_id = ret.company_id ? ret.company_id.toString() : ret.company_id;
+    // company_id может быть populate-нутым субдокументом — берём его _id, иначе сам ObjectId
+    ret.company_id = ret.company_id
+      ? (ret.company_id._id ? ret.company_id._id.toString() : ret.company_id.toString())
+      : ret.company_id;
     delete ret._id;
     delete ret.__v;
   }
