@@ -22,27 +22,42 @@
   </style>
 </head>
 <body>
-  <header class="app-header" style="background:#1e1b4b;">
-    <div class="logo">ROLAB <span class="dev-badge">DEV</span></div>
-    <div class="user-info">
-      <span id="header-user-name" style="color:#c4b5fd;"></span>
-      <button class="btn btn-sm btn-logout" onclick="API.logout()">🚪 Выйти</button>
-    </div>
-  </header>
+  <div class="app-shell" id="app-shell">
+    <div class="sidebar-backdrop" onclick="toggleSidebar()"></div>
 
-  <div class="main-content" style="padding:24px;">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-brand"><span class="brand-dot"></span> ROLAB <span class="dev-badge">DEV</span></div>
+      <nav class="app-nav" id="main-nav">
+        <a href="#users" data-tab="users" class="active" onclick="showTab('users');return false;"><span class="nav-ico">👤</span> Пользователи</a>
+        <a href="#companies" data-tab="companies" onclick="showTab('companies');return false;"><span class="nav-ico">🏢</span> Компании</a>
+        <a href="#schedule" data-tab="schedule" onclick="showTab('schedule');return false;"><span class="nav-ico">📅</span> Расписание</a>
+        <a href="#lessons" data-tab="lessons" onclick="showTab('lessons');return false;"><span class="nav-ico">📚</span> Занятия</a>
+        <a href="#subs" data-tab="subs" onclick="showTab('subs');return false;"><span class="nav-ico">🔄</span> Замены</a>
+        <a href="#create-user" data-tab="create-user" onclick="showTab('create-user');return false;"><span class="nav-ico">➕</span> Пользователь</a>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="btn btn-logout" onclick="API.logout()">🚪 Выйти</button>
+      </div>
+    </aside>
+
+    <!-- MAIN AREA -->
+    <div class="app-main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Меню">☰</button>
+          <span class="topbar-brand">ROLAB DEV</span>
+        </div>
+        <div class="topbar-user">
+          <span id="header-user-name"></span>
+          <span class="avatar" id="header-avatar" style="background:linear-gradient(135deg,#7c3aed,#a855f7);"></span>
+        </div>
+      </header>
+
+      <div class="main-content" id="main-content">
 
     <h2 style="margin-bottom:12px;">Статистика базы данных</h2>
     <div class="stats-row" id="db-stats"></div>
-
-    <div class="tab-nav">
-      <button class="tab-btn active" data-tab="users" onclick="showTab('users',this)">Пользователи</button>
-      <button class="tab-btn" data-tab="companies" onclick="showTab('companies',this)">Компании</button>
-      <button class="tab-btn" data-tab="schedule" onclick="showTab('schedule',this)">Расписание</button>
-      <button class="tab-btn" data-tab="lessons" onclick="showTab('lessons',this)">Занятия</button>
-      <button class="tab-btn" data-tab="subs" onclick="showTab('subs',this)">Замены</button>
-      <button class="tab-btn" data-tab="create-user" onclick="showTab('create-user',this)">+ Пользователь</button>
-    </div>
 
     <!-- USERS -->
     <div class="tab-panel active" id="tab-users">
@@ -215,6 +230,18 @@
     const user = API.getUser();
     if (!user || user.role !== 'dev') window.location.href = '/login.html';
     document.getElementById('header-user-name').textContent = user.full_name;
+    const avatarEl = document.getElementById('header-avatar');
+    if (avatarEl) avatarEl.textContent = (user.full_name || '?').trim().charAt(0).toUpperCase();
+
+    // Мобильный сайдбар
+    function toggleSidebar() {
+      const shell = document.getElementById('app-shell');
+      if (shell) shell.classList.toggle('sidebar-open');
+    }
+    function closeSidebar() {
+      const shell = document.getElementById('app-shell');
+      if (shell) shell.classList.remove('sidebar-open');
+    }
 
     function openModal(id) { document.getElementById(id).classList.add('show'); }
     function closeModal(id) { document.getElementById(id).classList.remove('show'); }
@@ -222,11 +249,14 @@
       o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); });
     });
 
-    function showTab(name, btn) {
+    // Разделы теперь пункты сайдбара (.app-nav a[data-tab])
+    function showTab(name) {
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.app-nav a').forEach(a => a.classList.remove('active'));
       document.getElementById('tab-' + name).classList.add('active');
-      btn.classList.add('active');
+      const link = document.querySelector(`.app-nav a[data-tab="${name}"]`);
+      if (link) link.classList.add('active');
+      closeSidebar();
       if (name === 'users') loadUsers();
       if (name === 'companies') loadCompanies();
       if (name === 'schedule') loadSchedule();
