@@ -7,22 +7,37 @@
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <header class="app-header">
-    <div class="logo">ROLAB</div>
-    <div class="user-info">
-      <span id="header-user-name"></span>
-      <button class="btn btn-sm btn-logout" onclick="API.logout()">🚪 Выйти</button>
-    </div>
-  </header>
+  <div class="app-shell" id="app-shell">
+    <div class="sidebar-backdrop" onclick="toggleSidebar()"></div>
 
-  <nav class="app-nav" id="main-nav">
-    <a href="#lessons" data-page="lessons" class="active">Мои занятия</a>
-    <a href="#schedule" data-page="schedule">Моё расписание</a>
-    <a href="#reports" data-page="reports">Мои отчеты</a>
-    <a href="#settings" data-page="settings">Настройки</a>
-  </nav>
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-brand"><span class="brand-dot"></span> ROLAB</div>
+      <nav class="app-nav" id="main-nav">
+        <a href="#lessons" data-page="lessons" class="active"><span class="nav-ico">📚</span> Мои занятия</a>
+        <a href="#schedule" data-page="schedule"><span class="nav-ico">📅</span> Моё расписание</a>
+        <a href="#reports" data-page="reports"><span class="nav-ico">📊</span> Мои отчёты</a>
+        <a href="#settings" data-page="settings"><span class="nav-ico">⚙️</span> Настройки</a>
+      </nav>
+      <div class="sidebar-footer">
+        <button class="btn btn-logout" onclick="API.logout()">🚪 Выйти</button>
+      </div>
+    </aside>
 
-  <div class="main-content" id="main-content">
+    <!-- MAIN AREA -->
+    <div class="app-main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="sidebar-toggle" onclick="toggleSidebar()" aria-label="Меню">☰</button>
+          <span class="topbar-brand">ROLAB</span>
+        </div>
+        <div class="topbar-user">
+          <span id="header-user-name"></span>
+          <span class="avatar" id="header-avatar"></span>
+        </div>
+      </header>
+
+      <div class="main-content" id="main-content">
 
     <!-- MY LESSONS -->
     <div class="page-section active" id="page-lessons">
@@ -188,7 +203,9 @@
         </div>
       </div>
     </div>
-  </div>
+      </div><!-- /.main-content -->
+    </div><!-- /.app-main -->
+  </div><!-- /.app-shell -->
 
   <!-- MODAL: Lesson -->
   <div class="modal-overlay" id="modal-lesson">
@@ -414,6 +431,18 @@
       else window.location.href = '/login.html';
     }
     document.getElementById('header-user-name').textContent = user.full_name;
+    const avatarEl = document.getElementById('header-avatar');
+    if (avatarEl) avatarEl.textContent = (user.full_name || '?').trim().charAt(0).toUpperCase();
+
+    // Мобильный сайдбар
+    function toggleSidebar() {
+      const shell = document.getElementById('app-shell');
+      if (shell) shell.classList.toggle('sidebar-open');
+    }
+    function closeSidebar() {
+      const shell = document.getElementById('app-shell');
+      if (shell) shell.classList.remove('sidebar-open');
+    }
 
     // NAVIGATION
     let currentPage = 'lessons';
@@ -434,6 +463,7 @@
         const page = link.dataset.page;
         window.location.hash = page;
         navigateTo(page);
+        closeSidebar();
       });
     });
     window.addEventListener('hashchange', () => navigateTo(window.location.hash.replace('#', '') || 'lessons'));

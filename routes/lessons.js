@@ -36,7 +36,9 @@ function formatLesson(l) {
     actual_teacher_name: actualTeacher.full_name,
     company_id: company._id.toString(),
     company_name: company.name,
-    company_type: company.type
+    company_type: company.type,
+    company_payment_type: company.payment_type
+      || (company.type === 'kindergarten' ? 'individual' : 'organization')
   };
 }
 
@@ -45,7 +47,7 @@ async function getLessonsPopulated(filter) {
     .populate({
       path: 'schedule_slot_id',
       populate: [
-        { path: 'company_id', select: 'name type' },
+        { path: 'company_id', select: 'name type payment_type' },
         { path: 'teacher_id', select: 'full_name' }
       ]
     })
@@ -64,6 +66,11 @@ router.get('/', async (req, res) => {
       filter.actual_teacher_id = new mongoose.Types.ObjectId(req.user.id);
     } else if (teacher_id) {
       filter.actual_teacher_id = teacher_id;
+    }
+    // admin/dev видят все занятия — фильтр по педагогу НЕ применяется (БАГ 2)
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('[GET /api/lessons] role=%s filter=%j', req.user.role, filter);
     }
 
     if (status) filter.status = status;
@@ -138,6 +145,11 @@ router.put('/:id/complete', async (req, res) => {
 
     if (req.user.role === 'teacher' && lesson.actual_teacher_id.toString() !== req.user.id) {
       return res.status(403).json({ error: 'Нет доступа к этому занятию' });
+    }
+
+    // БАГ 5: нельзя провести уже проведённое занятие
+    if (lesson.status === 'completed') {
+      return res.status(400).json({ error: 'Занятие уже проведено' });
     }
 
     const companyType = lesson.schedule_slot_id?.company_id?.type;

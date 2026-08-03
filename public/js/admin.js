@@ -10,6 +10,19 @@ if (!user || (user.role !== 'admin' && user.role !== 'dev')) {
   window.location.href = '/login.html';
 }
 document.getElementById('header-user-name').textContent = user.full_name;
+// Инициал в аватарке топбара
+const avatarEl = document.getElementById('header-avatar');
+if (avatarEl) avatarEl.textContent = (user.full_name || '?').trim().charAt(0).toUpperCase();
+
+// Мобильный сайдбар: открыть/закрыть
+function toggleSidebar() {
+  const shell = document.getElementById('app-shell');
+  if (shell) shell.classList.toggle('sidebar-open');
+}
+function closeSidebar() {
+  const shell = document.getElementById('app-shell');
+  if (shell) shell.classList.remove('sidebar-open');
+}
 
 // ============================================================
 // NAVIGATION
@@ -44,6 +57,7 @@ document.querySelectorAll('.app-nav a').forEach(link => {
     const page = link.dataset.page;
     window.location.hash = page;
     navigateTo(page);
+    closeSidebar(); // на мобильном закрываем меню после выбора
   });
 });
 
@@ -69,6 +83,32 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
   });
 });
 
+// ============================================================
+// UI HELPERS (UX 3/4)
+// ============================================================
+// Skeleton-загрузчик: показывает мерцающие строки на время fetch
+function showSkeleton(tbody, cols = 5, rows = 3) {
+  if (!tbody) return;
+  tbody.innerHTML = Array(rows).fill(
+    `<tr>${Array(cols).fill('<td><div class="skeleton-cell"></div></td>').join('')}</tr>`
+  ).join('');
+}
+
+// Информативное пустое состояние с кнопкой сброса фильтров
+function emptyState(colspan, message, resetFn) {
+  const btn = resetFn
+    ? ` <button class="btn btn-sm btn-outline" style="margin-top:8px;" onclick="${resetFn}()">Сбросить фильтры</button>`
+    : '';
+  return `<tr><td colspan="${colspan}" class="empty-state">${message}${btn}</td></tr>`;
+}
+
+function resetLessonsFilters() {
+  clearSelectValue('lessons-filter-teacher');
+  clearSelectValue('lessons-filter-company');
+  document.getElementById('lessons-filter-status').value = '';
+  loadLessons();
+}
+
 // Escape закрывает верхнюю модалку (второй уровень — раньше первого)
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
@@ -83,6 +123,31 @@ document.addEventListener('keydown', (e) => {
 // ============================================================
 let allTeachers = [];
 let allCompanies = [];
+
+// ============================================================
+// UX 1 — Searchable-селекты (Tom Select). Только фильтры верхнего уровня;
+// селекты в модалках остаются нативными (их value задаётся напрямую).
+// ============================================================
+const SEARCHABLE_IDS = new Set([
+  'schedule-filter-teacher', 'lessons-filter-teacher', 'reports-filter-teacher', 'payments-filter-teacher',
+  'schedule-filter-company', 'lessons-filter-company', 'reports-filter-company', 'teacher-filter-company'
+]);
+
+function destroySearchable(el) {
+  if (el && el.tomselect) el.tomselect.destroy();
+}
+function initSearchable(el) {
+  if (!el || typeof TomSelect === 'undefined') return;      // graceful degradation
+  if (!SEARCHABLE_IDS.has(el.id) || el.tomselect) return;
+  new TomSelect(el, { allowEmptyOption: true, sortField: { field: 'text', direction: 'asc' } });
+}
+// Сброс значения с учётом Tom Select
+function clearSelectValue(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (el.tomselect) el.tomselect.clear(true);
+  else el.value = '';
+}
 
 async function loadFilterOptions() {
   try {
@@ -101,6 +166,7 @@ async function loadFilterOptions() {
     const el = document.getElementById(id);
     if (!el) return;
     const val = el.value;
+    destroySearchable(el); // вернуть нативный select перед перестройкой опций
     const isFilter = id.includes('filter');
     const isSub = id === 'lesson-substitute-teacher';
     el.innerHTML = isFilter ? '<option value="">Все</option>'
@@ -110,6 +176,7 @@ async function loadFilterOptions() {
       el.innerHTML += `<option value="${t.id}">${escHtml(t.full_name)}</option>`;
     });
     if (val) el.value = val;
+    initSearchable(el);
   });
 
   const companySelects = [
@@ -120,6 +187,7 @@ async function loadFilterOptions() {
     const el = document.getElementById(id);
     if (!el) return;
     const val = el.value;
+    destroySearchable(el); // вернуть нативный select перед перестройкой опций
     const isFilter = id.includes('filter');
     el.innerHTML = isFilter ? '<option value="">Все</option>' : '';
     allCompanies.forEach(c => {
@@ -127,6 +195,7 @@ async function loadFilterOptions() {
       el.innerHTML += `<option value="${c.id}">${escHtml(c.name)} ${typeLabel}</option>`;
     });
     if (val) el.value = val;
+    initSearchable(el);
   });
 }
 
@@ -195,6 +264,7 @@ async function loadCompanies() {
     if (type) query += `type=${type}&`;
     if (search) query += `search=${encodeURIComponent(search)}&`;
 
+    showSkeleton(document.getElementById('companies-body'), 6);
     const companies = await API.get(query);
     const tbody = document.getElementById('companies-body');
 
@@ -231,6 +301,9 @@ function openCompanyModal(data) {
   document.getElementById('company-contact').value = data ? data.contact_person : '';
   document.getElementById('company-phone').value = data ? data.phone : '';
   document.getElementById('company-client-rate').value = (data && data.client_rate != null) ? data.client_rate : '';
+  // ФУНКЦИЯ 1: тип оплаты. Для новой компании — по типу (садик→родители, школа→организация)
+  const defaultPT = (data ? data.type : 'school') === 'kindergarten' ? 'individual' : 'organization';
+  document.getElementById('company-payment-type').value = (data && data.payment_type) ? data.payment_type : defaultPT;
   document.getElementById('modal-company-title').textContent = data ? 'Редактировать компанию' : 'Новая компания';
   openModal('modal-company');
 }
@@ -253,6 +326,7 @@ async function saveCompany() {
     address: document.getElementById('company-address').value.trim(),
     contact_person: document.getElementById('company-contact').value.trim(),
     phone: document.getElementById('company-phone').value.trim(),
+    payment_type: document.getElementById('company-payment-type').value,
     client_rate: clientRateRaw === '' ? null : Number(clientRateRaw)
   };
 
@@ -546,7 +620,22 @@ function openSlotModal(data) {
     document.getElementById('slot-company').value = data.company_id;
   }
 
+  validateSlotTime(); // сброс/проверка ошибки времени (БАГ 7)
   openModal('modal-slot');
+}
+
+// БАГ 7: inline-валидация времени слота. Возвращает true, если время корректно.
+function validateSlotTime() {
+  const start = document.getElementById('slot-time-start').value;
+  const end = document.getElementById('slot-time-end').value;
+  const errEl = document.getElementById('slot-time-error');
+  const saveBtn = document.getElementById('slot-save-btn');
+  const invalid = start && end && end <= start;
+
+  if (errEl) errEl.style.display = invalid ? 'block' : 'none';
+  if (errEl && invalid) errEl.textContent = 'Время окончания должно быть позже начала';
+  if (saveBtn) saveBtn.disabled = !!invalid;
+  return !invalid;
 }
 
 async function editSlot(id) {
@@ -574,6 +663,7 @@ async function saveSlot() {
     alert('Заполните все обязательные поля');
     return;
   }
+  if (!validateSlotTime()) return; // БАГ 7
 
   try {
     if (id) {
@@ -634,6 +724,8 @@ async function loadLessons() {
     const company = document.getElementById('lessons-filter-company').value;
     const status = document.getElementById('lessons-filter-status').value;
 
+    showSkeleton(document.getElementById('lessons-body'), 8);
+
     let query = '/lessons?';
     if (dateFrom) query += `date_from=${dateFrom}&`;
     if (dateTo) query += `date_to=${dateTo}&`;
@@ -645,7 +737,11 @@ async function loadLessons() {
     const tbody = document.getElementById('lessons-body');
 
     if (lessons.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" class="empty-state">Нет занятий за выбранный период</td></tr>';
+      const hasFilters = teacher || company || status;
+      const msg = hasFilters
+        ? 'Нет занятий по выбранным фильтрам за период. Попробуйте расширить период или сбросить фильтры.'
+        : 'Занятия ещё не созданы. Настройте расписание и нажмите «Сгенерировать занятия».';
+      tbody.innerHTML = emptyState(8, msg, hasFilters ? 'resetLessonsFilters' : null);
       return;
     }
 
@@ -667,6 +763,8 @@ async function loadLessons() {
           <td>
             <div class="btn-group">
               <button class="btn btn-sm btn-outline" onclick="${l.company_type === 'kindergarten' ? `openAttendanceModal('${l.id}')` : `openLessonModal('${l.id}')`}">Открыть</button>
+              ${(l.company_type === 'kindergarten' && l.company_payment_type === 'individual')
+                ? `<button class="btn btn-sm btn-outline" onclick="openPaymentsModal('${l.id}')" title="Оплата родителями">💰</button>` : ''}
               <button class="btn btn-sm btn-danger" onclick="deleteLesson('${l.id}')">Удалить</button>
             </div>
           </td>
@@ -708,6 +806,14 @@ async function openLessonModal(id) {
       ${l.company_type === 'kindergarten' ? `<button class="btn btn-success mt-16" onclick="closeModal('modal-lesson'); openAttendanceModal('${l.id}');">✅ Отметка по списку</button>` : ''}
     `;
 
+    // БАГ 5: нельзя провести уже проведённое занятие — блокируем кнопку
+    const completeBtn = document.getElementById('lesson-complete-btn');
+    if (completeBtn) {
+      const done = l.status === 'completed';
+      completeBtn.disabled = done;
+      completeBtn.title = done ? 'Занятие уже проведено' : '';
+    }
+
     await loadFilterOptions();
     openModal('modal-lesson');
   } catch (e) {
@@ -746,6 +852,78 @@ async function cancelLesson() {
     closeModal('modal-lesson');
     loadLessons();
     if (currentPage === 'dashboard') loadDashboard();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+// ============================================================
+// ФУНКЦИЯ 2 — Оплата родителями
+// ============================================================
+let paymentsData = null; // { lesson_id, children: [...] }
+
+async function openPaymentsModal(lessonId) {
+  try {
+    const data = await API.get(`/payments/individual/${lessonId}`);
+    paymentsData = data;
+    document.getElementById('payments-lesson-id').value = lessonId;
+    document.getElementById('payments-info').innerHTML =
+      `Садик: <strong>${escHtml(data.company_name)}</strong> · Дата: <strong>${formatDate(data.date)}</strong>`;
+
+    if (!data.children.length) {
+      document.getElementById('payments-body').innerHTML =
+        '<tr><td colspan="4" class="empty-state">Нет присутствовавших детей. Сначала отметьте посещаемость.</td></tr>';
+      document.getElementById('payments-totals').textContent = '';
+    } else {
+      renderPaymentsTable();
+    }
+    openModal('modal-payments');
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+function renderPaymentsTable() {
+  const tbody = document.getElementById('payments-body');
+  tbody.innerHTML = paymentsData.children.map(c => `
+    <tr data-child="${c.child_id}">
+      <td><strong>${escHtml(c.full_name)}</strong> ${childStatusBadge(c.status)}</td>
+      <td><input type="number" min="0" class="pay-amount" style="width:100px;"
+           value="${c.amount != null ? c.amount : ''}"
+           onchange="savePayment('${c.child_id}', { amount: this.value })"></td>
+      <td>
+        <button class="btn btn-sm ${c.paid ? 'btn-success' : 'btn-outline'}"
+          onclick="savePayment('${c.child_id}', { paid: ${!c.paid} })">
+          ${c.paid ? '✅ Оплачено' : '⏳ Отметить'}
+        </button>
+      </td>
+      <td><input type="text" class="pay-note" style="width:100%;" value="${escAttr(c.note || '')}"
+           onchange="savePayment('${c.child_id}', { note: this.value })"></td>
+    </tr>`).join('');
+  recalcPaymentsTotals();
+}
+
+function recalcPaymentsTotals() {
+  const billed = paymentsData.children.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+  const paid = paymentsData.children.filter(c => c.paid).reduce((s, c) => s + (Number(c.amount) || 0), 0);
+  const debt = billed - paid;
+  document.getElementById('payments-totals').innerHTML =
+    `Начислено: ${formatMoney(billed)} · Оплачено: <span style="color:var(--success)">${formatMoney(paid)}</span>` +
+    (debt > 0 ? ` · Долг: <span style="color:var(--danger)">${formatMoney(debt)}</span>` : '');
+}
+
+async function savePayment(childId, patch) {
+  const lessonId = document.getElementById('payments-lesson-id').value;
+  try {
+    const updated = await API.put(`/payments/individual/${lessonId}/${childId}`, patch);
+    const row = paymentsData.children.find(c => c.child_id === childId);
+    if (row) {
+      row.paid = updated.paid;
+      row.amount = updated.amount;
+      row.note = updated.note;
+      row.paid_at = updated.paid_at;
+    }
+    renderPaymentsTable(); // перерисуем, чтобы обновить кнопку/итоги
   } catch (e) {
     alert(e.message);
   }
@@ -866,16 +1044,25 @@ async function loadAttendanceReport(dateFrom, dateTo, companyId, teacherId) {
   const wrap = document.getElementById('reports-attendance-wrap');
   if (!wrap) return;
 
-  // Нужен садик
-  const company = (allCompanies || []).find(c => c.id === companyId);
-  if (!companyId || !company || company.type !== 'kindergarten') {
+  // Компания обязательна
+  if (!companyId) {
     wrap.innerHTML = '<div class="empty-state" style="padding:20px;">Выберите садик в фильтре «Компания» сверху и нажмите «Показать»</div>';
+    return;
+  }
+
+  // Тип берём из справочника, если он загружен. Если справочник пуст/устарел
+  // (прямой переход на #reports, F5) — НЕ блокируем, а пробуем запрос:
+  // бэкенд сам вернёт понятную ошибку, если компания не садик.
+  const company = (allCompanies || []).find(c => c.id === companyId);
+  if (company && company.type !== 'kindergarten') {
+    wrap.innerHTML = '<div class="empty-state" style="padding:20px;">Посещаемость по датам ведётся только для садиков. Для школ используйте «Сформировать счёт».</div>';
     return;
   }
 
   try {
     let q = `/reports/attendance?date_from=${dateFrom}&date_to=${dateTo}&company_id=${companyId}`;
     if (teacherId) q += `&teacher_id=${teacherId}`;
+    console.log('[attendance-report] GET', q);
     const data = await API.get(q);
 
     if (!data.dates.length || !data.children.length) {
@@ -1012,6 +1199,12 @@ function buildClientInvoiceHtml(data) {
     ? `<div class="grand-secondary">Итого посещений: <span>${data.total_present}</span></div>`
     : '';
 
+  // ФУНКЦИЯ 3: факт оплаты родителями (individual)
+  const paidHtml = (data.total_paid !== undefined)
+    ? `<div class="grand-secondary">Оплачено родителями: <span>${formatMoney(data.total_paid)}</span></div>` +
+      (data.debt > 0 ? `<div class="grand-secondary" style="color:#dc2626;">Долг: <span style="color:#dc2626;">${formatMoney(data.debt)}</span></div>` : '')
+    : '';
+
   return `<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8">
 <title>Счёт — ${escHtml(data.company_name)}</title>
 <style>
@@ -1043,6 +1236,7 @@ function buildClientInvoiceHtml(data) {
   ${tableHtml}
   ${totalPresentHtml}
   <div class="grand">Итого к оплате клиентом: <span>${formatMoney(data.client_total)}</span></div>
+  ${paidHtml}
 </body></html>`;
 }
 
